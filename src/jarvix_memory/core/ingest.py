@@ -67,10 +67,11 @@ def scan_directory(root: str, max_files: int = MAX_FILES_PER_DIR,
             "skipped_due_to_cap": skipped, "scanned_at": datetime.utcnow().isoformat()}
 
 
-def ingest_directory(db, root: str, note: str = None) -> Dict:
+def ingest_directory(db, root: str, note: str = None,
+                      max_files: int = MAX_FILES_PER_DIR) -> Dict:
     """Scan + create memories. Returns ids + stats."""
     from ..core.models import Memory
-    info = scan_directory(root)
+    info = scan_directory(root, max_files=max_files)
     if "error" in info:
         return info
     top_ext = sorted(info["counts"].items(), key=lambda x: -x[1])[:8]
