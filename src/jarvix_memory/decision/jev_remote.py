@@ -11,6 +11,7 @@ Every method returns the same shaped dict as RuleBasedProvider plus a
 
 import json
 import os
+import time
 import logging
 import urllib.request
 import urllib.error
@@ -50,6 +51,7 @@ class JevRemoteProvider(DecisionProvider):
         self.timeout = timeout
         self.last_error: Dict = {}
         self.last_quota: Dict = {}
+        self._dead_until = 0.0
 
     def status(self) -> Dict:
         """Availability + last known quota (jev-agent extra). One tiny probe call."""
@@ -71,7 +73,11 @@ class JevRemoteProvider(DecisionProvider):
         return bool(self.api_key)
 
     def _request(self, state, questions: Dict, retries: int = 2) -> Dict:
-        """Single HTTP call. Official policy: 429/529 -> backoff with Retry-After."""
+        """Single HTTP call. 429/529 -> official backoff + Retry-After.
+        Permanent quota/auth errors -> cooldown so every later call fails FAST
+        (no HTTP retries) and caller falls back to deterministic rules."""
+        if self._dead_until and time.time() < self._dead_until:
+            raise RuntimeError("jev provider en cooldown (quota epuise ou auth rejete)")
         import time as _time
         last_exc: Exception = RuntimeError("no attempt")
         for attempt in range(retries + 1):
@@ -97,6 +103,21 @@ class JevRemoteProvider(DecisionProvider):
                 return body.get("answers", {})
             except urllib.error.HTTPError as e:
                 last_exc = e
+                # permanent errors: no point retrying this month
+                body_snippet = ""
+                try:
+                    body_snippet = e.read().decode()[:300]
+                except Exception:
+                    pass
+                if e.code in (401, 402) or "credit" in body_snippet.lower():
+                    if e.code == 429:
+                        # rate 429 = transient, but "Out of credits" check only w/ body
+                        if "credit" not in body_snippet.lower():
+                            pass  # transient below
+                    self._dead_until = time.time() + 6 * 3600  # 6h cooldown
+                    self.last_error = {"permanent": True, "code": e.code,
+                                       "message": body_snippet}
+                    raise
                 if e.code in (429, 529) and attempt < retries:
                     raw = (e.headers.get("Retry-After") or "").strip()
                     wait = float(raw) if raw.replace(".", "", 1).isdigit() else 0.5 * (2 ** attempt)

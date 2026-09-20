@@ -59,6 +59,22 @@ L'architecture de JARVIX doit explicitement ce qui suit à des projets publics q
 | Meta AI 2026 (mémoire comme politique) | injection sélective silencieuse par défaut |
 | [neoneye/agent-memory-atlas](https://github.com/neoneye/agent-memory-atlas) | benchmarks : deletion, contradiction, supersession, coût |
 
+### Écosystème Jev / System One (alternatives + sources)
+
+Le protocole typé `POST /v1/systemone` (noul/choice/score) provient de [TypeSafe AI](https://typesafe.ai) (jev, closed-weights). Alternatives open-weight que `JevRemoteProvider` supporte directement (même wire protocol) :
+
+| Alternative | Modèle | Comment le brancher |
+|---|---|---|
+| TypeSafe direct ([[api.typesafe.ai](https://api.typesafe.ai)]) | jev-latest (jev-1.13.0) | `jev_base_url` + clé TypeSafe |
+| [jev-agent.com](https://jev-agent.com) | jev-1.13.0 via proxy | `jev_base_url=https://jev-agent.com/api/v1` + clé `jv_live_` |
+| [LitJev](https://github.com/zhengxuyu/litjev) | Qwen3.x local (pas d'entraînement) | `jev_local_url=http://127.0.0.1:8000`, `jev_provider=local` |
+| [LocalJev](https://github.com/githubnext/localjev) | DiffusionGemma via oMLX | `jev_local_url=http://127.0.0.1:8080` |
+| [simple-jev](https://github.com/featherless-ai/simple-jev) | Qwen3.5-0.8B (+ RFDT fine-tune) | `jev_local_url=http://127.0.0.1:8000` |
+| [open-jev](https://github.com/daseinlabs/open-jev) | Gemma 3 4B (MLX/Apple) | `jev_local_url=<serveur>` |
+| [OpenJEV](https://openjev.sh) (cloud open) | openjev | `jev_base_url=https://api.openjev.sh/v1` + clé |
+
+Concrètement : `config.json` → `jev_provider: local` + `jev_local_url` route tous les jugements vers un moteur **entièrement local** (aucun token à la fin du mois, tout reste sur ta machine).
+
 Les concepts retenus implémentés ici de manière originale : boucle fermée `observer → expérimenter → vérifier → mémoriser → apprendre → planifier → agir → mesurer → corriger`, mémoire négative `do_not_repeat`, environnements fingerprintés, value/cost retrieval, et couche décision JEV typée.
 
 ## 6. Conformité

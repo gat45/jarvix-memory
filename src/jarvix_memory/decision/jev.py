@@ -142,11 +142,12 @@ class JEV:
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         except Exception:
             pass
-        want_remote = (os.environ.get("JARVIX_JEV_PROVIDER") == "remote"
-                       or cfg.get("jev_provider") == "remote"
-                       or bool(os.environ.get("JARVIX_JEV_API_KEY"))
-                       or bool(os.environ.get("TYPESAFE_API_KEY")))
-        if want_remote:
+        mode = os.environ.get("JARVIX_JEV_PROVIDER") or cfg.get("jev_provider") or ""
+        has_remote_key = bool(os.environ.get("JARVIX_JEV_API_KEY")
+                              or os.environ.get("TYPESAFE_API_KEY")
+                              or cfg.get("jev_api_key"))
+        # Chain: remote API (if key + mode remote) -> local systemone server -> rules
+        if mode == "remote" and has_remote_key or (has_remote_key and mode != "local"):
             try:
                 from .jev_remote import JevRemoteProvider
                 rp = JevRemoteProvider(
@@ -155,9 +156,21 @@ class JEV:
                     config_path=cfg_path)
                 if rp.available:
                     return rp
-                logger.warning("Jev remote sans cle API — RuleBasedProvider")
             except ImportError:
                 logger.warning("jev_remote module absent — RuleBasedProvider")
+        # LOCAL: a /v1/systemone-compatible server (LitJev:8000, LocalJev:8080,
+        # simple-jev:8000 /v1/classifier, open-jev) — no API key needed
+        local_base = os.environ.get("JARVIX_JEV_LOCAL_URL") or cfg.get("jev_local_url")
+        if mode == "local" or (local_base and mode not in ("remote", "rules")):
+            try:
+                from .jev_remote import JevRemoteProvider
+                return JevRemoteProvider(api_key="local",
+                                         base_url=local_base,
+                                         model=os.environ.get("JARVIX_JEV_LOCAL_MODEL")
+                                         or cfg.get("jev_local_model") or "local",
+                                         timeout=10.0)
+            except ImportError:
+                pass
         return RuleBasedProvider()
 
     def log_decision(self, kind: str, subject: str, result: Dict):
