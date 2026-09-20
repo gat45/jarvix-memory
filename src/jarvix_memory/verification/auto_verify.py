@@ -5,18 +5,16 @@ claim, then the verdict is computed by the existing VerificationEngine.
 """
 
 import json
+import os
 import subprocess
 import logging
+import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional
 
 from .engine import VerificationEngine
 
 logger = logging.getLogger(__name__)
-
-# Thresholds (kept in code — probabilities are not proof)
-PASS_RATIO_VERIFIED = 0.8
-PASS_RATIO_REJECTED = 0.2
 
 
 class CheckError(Exception):
@@ -39,15 +37,39 @@ def check_file_contains(path: str, needle: str) -> Dict:
         return {"passed": False, "details": {"path": str(p), "error": str(e)}}
 
 
+# Thresholds (kept in code — probabilities are not proof)
+PASS_RATIO_VERIFIED = 0.8
+PASS_RATIO_REJECTED = 0.2
+
+# Allowlist for commands reachable through MCP (verify_auto "command" checks).
+# No shell (list argv only). Overridable via JARVIX_ALLOW_CMDS (comma-separated).
+DEFAULT_ALLOW_CMDS = ["git", "python", "pytest", "adb", "cmake", "ninja", "rg", "uv"]
+
+
+def _allowed_exes() -> set:
+    raw = os.environ.get("JARVIX_ALLOW_CMDS", ",".join(DEFAULT_ALLOW_CMDS))
+    allowed = {x.strip().lower() for x in raw.split(",") if x.strip()}
+    return allowed
+
+
 def check_command(cmd: List[str], expect_rc: int = 0, expect_stdout: str = None,
                   timeout: int = 60, cwd: str = None) -> Dict:
-    """Run an actual command — the strongest form of evidence."""
+    """Run an actual command — the strongest form of evidence. SANDBOXED:
+    argv-list only (no shell), executable must be allowlisted, timeout capped."""
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+        if not cmd or not isinstance(cmd[0], str):
+            return {"passed": False, "details": {"error": "cmd vide"}}
+        exe = Path(cmd[0]).stem.lower()
+        if exe not in _allowed_exes():
+            return {"passed": False, "details": {
+                "cmd": cmd, "error": f"commande non allowlistee: {cmd[0]}. "
+                f"ajouter via JARVIX_ALLOW_CMDS"}}  # policy is in code/config, not in the caller
+        timeout = min(timeout, 120)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                             cwd=cwd, shell=False)
         ok_rc = out.returncode == expect_rc
         ok_stdout = expect_stdout in (out.stdout or "") if expect_stdout else True
-        passed = ok_rc and ok_stdout
-        return {"passed": passed, "details": {
+        return {"passed": ok_rc and ok_stdout, "details": {
             "cmd": cmd, "returncode": out.returncode,
             "stdout_tail": (out.stdout or "")[-400:],
             "stderr_tail": (out.stderr or "")[-400:],

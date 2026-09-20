@@ -32,12 +32,36 @@ SIGNAL_PATTERNS = [
 
 
 class PerceptionEngine:
-    """Artifact -> observations. Observations become episodic/evidence memories."""
+    """Artifact -> observations. Observations become episodic/evidence memories.
+    SANDBOXED: paths must be inside perception_roots (config.json) or the project cwd."""
 
-    def __init__(self, db):
+    def __init__(self, db, allowed_roots: Optional[List[str]] = None):
         self.db = db
+        # Policy: roots from caller (UI/MCP reads config), never derived from target paths.
+        if allowed_roots:
+            self._allowed_roots = [Path(r).resolve() for r in allowed_roots if r]
+        else:
+            # Default sandbox: anything under the DB's grandparent (package/project root)
+            db_resolved = Path(db.db_path).resolve()
+            self._allowed_roots = [db_resolved.parent.parent]
+
+    def _check_path(self, path: str) -> Optional[str]:
+        p = Path(path).resolve()
+        if p.suffix in (".db", ".db-wal", ".db-shm", ".sqlite", ".sqlite3"):
+            return "lecture de la base memoire interdite"
+        for root in self._allowed_roots:
+            try:
+                p.relative_to(root)
+                return None  # ok
+            except ValueError:
+                continue
+        return (f"chemin hors sandbox perception: {p} "
+                f"(racines: {[str(r) for r in self._allowed_roots]})")
 
     def perceive(self, path: str, note: str = None) -> Dict:
+        deny = self._check_path(path)
+        if deny:
+            return {"error": f"sandbox: {deny}"}
         p = Path(path)
         if not p.exists() or not p.is_file():
             return {"error": f"file not found: {path}"}

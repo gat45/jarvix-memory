@@ -19,6 +19,19 @@ logger = logging.getLogger(__name__)
 EXPORT_DIR = "docs"  # relative to repo root
 
 
+def autolog_dir(config_path: Path = None) -> Path:
+    """Data repo dir from config.json (key 'autolog_dir'); default = package dir (source repo)."""
+    cfg_path = config_path or Path(__file__).resolve().parents[3] / "config.json"
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        d = cfg.get("autolog_dir")
+        if d and Path(d).exists():
+            return Path(d)
+    except Exception:
+        pass
+    return Path(__file__).resolve().parents[3]
+
+
 def _safe_project(name: Optional[str]) -> str:
     if not name:
         return "default"
@@ -75,9 +88,14 @@ def export_project(db, repo_path: str, project_id: Optional[str] = None) -> Dict
 
 def push_project(db, repo_path: str, remote: str = "origin", branch: str = "main",
                  project_id: Optional[str] = None, model=None,
-                 message: Optional[str] = None) -> Dict:
-    """Export + git commit + push. Trust chain: local export file -> remote repo."""
+                 message: Optional[str] = None, confirm: bool = False) -> Dict:
+    """Export + git commit + push. Policy in code: push requires confirm=True
+    (MCP agents get dry_run showing what WOULD be committed). Trust chain:
+    local export file -> remote repo."""
     info = export_project(db, repo_path, project_id)
+    if not confirm:
+        return {**info, "pushed": False, "dry_run": True,
+                "reason": "confirm=True requis pour commit+push (politique autopilot)"}
     slug = _safe_project(project_id)
 
     def run(cmd: List[str]) -> subprocess.CompletedProcess:

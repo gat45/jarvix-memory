@@ -494,22 +494,6 @@ def proactive_list_rules() -> str:
     return json.dumps(rules, default=str, ensure_ascii=False)
 
 
-@mcp.tool()
-@safe_tool
-def proactive_should(context: str) -> str:
-    """List memories that should be injected into context (without injecting)."""
-    reminders = router.proactive.should_inject(context)
-    return json.dumps(reminders, default=str, ensure_ascii=False)
-
-
-@mcp.tool()
-@safe_tool
-def proactive_inject(context: str) -> str:
-    """Check if any memory should be proactively injected into this context. Returns reminder or null."""
-    result = router.proactive.inject(context)
-    return json.dumps({"reminder": result})
-
-
 # ── Bilan ──────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -797,11 +781,11 @@ def jev_decide(context: str, options: str) -> str:
 
 @mcp.tool()
 @safe_tool
-def autopush(project_id: str = None, message: str = None) -> str:
-    """Export memories grouped by project_id to docs/memoire_<project>.md, commit and push to GitHub."""
-    from jarvix_memory.core.autopush import push_project
-    repo_path = str(Path(__file__).parent)
-    result = push_project(router.db, repo_path, project_id=project_id, message=message)
+def autopush(project_id: str = None, message: str = None, confirm: bool = False) -> str:
+    """Export memories by project_id to docs/memoire_<project>.md. DRY-RUN by default; confirm=True required for actual commit+push (data repo from config.json autolog_dir)."""
+    from jarvix_memory.core.autopush import push_project, autolog_dir
+    result = push_project(router.db, str(autolog_dir()),
+                          project_id=project_id, message=message, confirm=confirm)
     return json.dumps(result, ensure_ascii=False)
 
 

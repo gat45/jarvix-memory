@@ -12,6 +12,16 @@ venv/
 .coverage/
 htmlcov/
 
+# Config locale (perso) — example committé
+config.json
+opencode.json
+GEMINI.md
+
+# Rapports de session (privés) + exports autopush
+reports/
+docs/memoire_*.md
+*.md.bak
+
 # Base de données (privée)
 *.db
 *.db-wal

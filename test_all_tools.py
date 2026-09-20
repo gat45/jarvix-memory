@@ -337,7 +337,7 @@ print("\n[17/17] P0: AUTO-VERIFY / ENV / EXPERIMENT")
 
 av = router.auto_verify.verify_auto(
     router.verification.claim("pyproject exists").id,
-    [{"type": "file_exists", "path": r"D:\oneplus\memoire\pyproject.toml"}])
+    [{"type": "file_exists", "path": str(__import__("os").path.join(__import__("os").getcwd(), "pyproject.toml"))}])
 ok("verify_auto", av.get("verdict") == "verified", f"got {av.get('verdict')}")
 
 env = router.environment.capture({"bench_device": "ci-pc"})
@@ -377,7 +377,7 @@ ok("proactive_monitor", "inject" in mon and "refuted_path_warning" in mon and "s
 # 19. P2: PERCEPTION / QUANT WORLD / JEV (8 tools)
 print("\n[19/19] P2: PERCEPTION / QUANT / JEV")
 import tempfile as _tf, os as _os
-_logp = _os.path.join(_tf.gettempdir(), "ui_test_signals.log")
+_logp = _os.path.join(_os.path.abspath("."), "_test_signals.log")
 open(_logp, "w").write("start\nSIGSEGV 0xc0 in htp\nOOM failed\n12.3 tok/s\n")
 per = router.perception.perceive(_logp, note="ui-test")
 ok("perceive_file", per.get("signals", 0) >= 3 and (per.get("top_severity") or {}).get("tag") == "signal", f"got {per}")

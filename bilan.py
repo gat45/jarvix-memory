@@ -32,9 +32,11 @@ sys.path.insert(0, str(SRC))
 
 from jarvix_memory.router import MemoryRouter  # noqa: E402
 
-ONEPLUS_ROOT = Path(r"D:\oneplus")
-REPORTS_DIR = ONEPLUS_ROOT / "memoire" / "reports"
-LLAMA_BASE_URL = "http://127.0.0.1:8080"
+# Racine du projet a scanner : JARVIX_PROJECT_ROOT > cwd > parent du package
+import os as _os  # noqa: E402
+ONEPLUS_ROOT = Path(_os.environ.get("JARVIX_PROJECT_ROOT") or _os.getcwd())
+REPORTS_DIR = Path(_os.environ.get("JARVIX_REPORTS_DIR") or PKG_ROOT / "reports")
+LLAMA_BASE_URL = _os.environ.get("JARVIX_LLAMA_URL", "http://127.0.0.1:8080")
 
 
 def format_size(b: int) -> str:

@@ -26,8 +26,8 @@ CORS(app)
 # ── Config ─────────────────────────────────────────────────────
 CONFIG_PATH = PKG_ROOT / "config.json"
 DEFAULT_CONFIG = {
-    "llama_exe": r"C:\Users\videl\Desktop\lama-tensorRT 1050-5070\lama du 2708\llama-server.exe",
-    "gguf_dirs": [r"D:\oneplus", r"D:\lama cpp", r"C:\Users\videl\Desktop"],
+    "llama_exe": "",
+    "gguf_dirs": [],
     "llama_port": 8080,
     "llama_ctx": 8192,
     "llama_ngl": 99,
@@ -547,13 +547,15 @@ def api_rebuild():
 
 @app.route("/api/autopush", methods=["POST"])
 def api_autopush():
-    """Git autopilot: export + commit + push per project_id."""
-    from jarvix_memory.core.autopush import push_project
+    """Git autopilot: export + commit + push (data repo from config)."""
+    from jarvix_memory.core.autopush import push_project, autolog_dir
     d = request.json or {}
+    from jarvix_memory.core.autopush import push_project, autolog_dir
     try:
-        result = push_project(router.db, str(PKG_ROOT),
+        result = push_project(router.db, str(autolog_dir()),
                               project_id=d.get("project_id"),
-                              message=d.get("message"))
+                              message=d.get("message"),
+                              confirm=bool(d.get("confirm", True)))  # click UI = intention explicite
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
