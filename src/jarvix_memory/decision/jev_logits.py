@@ -46,21 +46,17 @@ class JevLogitsProvider(DecisionProvider):
             return False
 
     def _score_tokens(self, prompt: str, candidates: List[str]) -> Dict[str, float]:
-        """One completion with logprobs=5; extract logprob of each candidate
-        token for the NEXT token. Works with llama.cpp server."""
-        from urllib.parse import urlparse
-        from pathlib import Path as _Path
-        candidates = [c.upper()[:1] if len(c) == 1 else c.upper() for c in candidates]
-        # nouns may need a leading space depending on tokenizer; try both joins
-        tail = "Answer strictly with single choice: "
+        """One completion with logprobs; match candidate tokens (single letters
+        AND full words, with/without leading space) in top-logprobs."""
+        # keep full candidate words when given (OUI, NON, digits, letters)
+        base = [c.strip().upper() for c in candidates]
+        tail = "Answer strictly with one single token: "
         full_prompt = f"{prompt}\n{tail}"
         payload = json.dumps({
             "prompt": full_prompt,
             "max_tokens": 1,
             "temperature": 0.0,
             "logprobs": 10,
-            "echo": False,
-            "top_k": 50,
         }).encode("utf-8")
         req = urllib.request.Request(
             f"{self.base_url}/completion",
@@ -70,53 +66,62 @@ class JevLogitsProvider(DecisionProvider):
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             body = json.loads(resp.read())
-        # llama.cpp /completion returns tokens/probs list; logits view:
-        content = body.get("content", "")
-        probs = body.get("completion_probabilities") or \
-            (body.get("choices") or [{}])[0].get("logprobs", {}) or {}
-        # top_logprobs list of dicts
-        top = []
-        if isinstance(probs, dict) and probs.get("content"):
-            for item in probs["content"][:1]:
-                top = item.get("top_logprobs") or item.get("logprobs", []) or []
-        elif isinstance(probs, list):
-            top = probs[:1]
-        out = {c: -20.0 for c in candidates}
-        if not top:
-            # no raw logprobs: fallback, mustn't pretend
-            return {}
-        for entry in top:
+        probs = body.get("completion_probabilities") or []
+        tops: list = []
+        if isinstance(probs, list) and probs:
+            item = probs[0]
+            tops = item.get("top_logprobs") or []
+        out = {c.strip().upper(): -20.0 for c in base}
+        matched = 0
+        for entry in tops:
             if not isinstance(entry, dict):
                 continue
+            tok = str(entry.get("token", "")).strip().upper()
             lp = entry.get("logprob")
-            tok = (entry.get("token") or "").strip().upper()
-            if lp is not None and tok in out:
+            if lp is None:
+                continue
+            # exact: ' O' -> O / ' OUI' -> OUI
+            if tok in out:
                 out[tok] = max(out[tok], float(lp))
-        # check: content token maps if in candidates
-        if content.strip().upper()[:1] in out and out[content.strip().upper()] == -20.0:
-            pass  # keep logprobs-anchored result only
+                matched += 1
+                continue
+            # prefix: a first letter ' O' counts for 'OUI' candidate
+            for cand in out:
+                if (len(tok) == 2 and tok[-1] == cand[0]) or \
+                   (len(tok) > 2 and tok.lstrip() in cand[:len(tok.lstrip())]):
+                    out[cand] = max(out[cand], float(lp))
+                    matched += 1
+                    break
+        if not matched or all(v == -20.0 for v in out.values()):
+            return {}  # pas de logits exploitables -> l'appelant retombe sur rules
         return out
 
     def _softmax(self, logprobs: Dict[str, float], temp: float = 1.0) -> Dict[str, float]:
-        mx = max(logprobs.values())
-        exps = {k: math.exp((v - mx) / temp) for k, v in logprobs.items()}
+        # mask candidates never observed in top-k (they stay at -20 => ~0 weight)
+        real = {k: v for k, v in logprobs.items() if v > -19.0}
+        if not real:
+            return {}
+        mx = max(real.values())
+        exps = {k: math.exp((v - mx) / temp) for k, v in real.items()}
         s = sum(exps.values()) or 1.0
         return {k: round(v / s, 3) for k, v in exps.items()}
 
     # ── DecisionProvider contract ─────────────────────────────
 
     def route(self, query: str) -> Dict:
-        layers = ["e", "s", "p", "d", "h", "g", "r"]  # episodic,semantic,procedural,decision,hypothesis,graph,recovery
-        names = {"e": "episodic", "s": "semantic", "p": "procedural", "d": "decision",
-                 "h": "hypothesis", "g": "graph", "r": "recovery"}
+        keys = ["E", "S", "P", "D", "H", "G", "R"]
+        names = {"E": "episodic", "S": "semantic", "P": "procedural", "D": "decision",
+                 "H": "hypothesis", "G": "graph", "R": "recovery"}
         try:
             lp = self._score_tokens(
                 f"Question agent: {query}\n"
                 "CHOIX de couche memoire la plus utile: e=episodic(events), "
-                "s=semantic facts, p=procedural(how-to), d=decision rarionale, "
+                "s=semantic facts, p=procedural(how-to), d=decision rationale, "
                 "h=hypothesis a tester, g=graphe relations, r=recovery echec.",
-                layers)
+                keys)
             probs = self._softmax(lp)
+            if not probs:
+                raise ValueError("no logprobs")
             win = max(probs, key=probs.get)
             return {"choice": names[win], "distribution":
                     {names[k]: v for k, v in probs.items()},
@@ -132,10 +137,11 @@ class JevLogitsProvider(DecisionProvider):
             lp = self._score_tokens(
                 f"CONTEXTE: {context[:1500]}\n"
                 f"MEMOIRE: {(memory.get('content') or '')[:1500]}\n"
-                "Faut-il injecter cette memoire dans le contexte MAINTENANT ? OUI ou NON.",
-                ["O", "N"])  # first letters
+                "Faut-il injecter cette memoire dans le contexte MAINTENANT ?"
+                 "Reponds par UN mot (OUI ou NON). Reponse:"
+                ["OUI", "NON"])  
             p = self._softmax(lp)
-            yes = p.get("O", 0.5)
+            yes = p.get("OUI", 0.5)
             action = "inject" if yes >= 0.75 else ("maybe" if yes >= 0.45 else "ignore")
             return {"decision": action, "prob": round(yes, 3), "provider": "jev-logits"}
         except Exception as e:
@@ -149,10 +155,14 @@ class JevLogitsProvider(DecisionProvider):
         try:
             lp = self._score_tokens(
                 f"CLAIM: {claim[:1200]}\nPREUVES: {passed} passent, {failed} echouent "
-                f"({', '.join(sorted({e.get('type', '') for e in ev if hasattr(e, 'get')}))}.\n"
-                "Les preuves supportent-elles le claim ? OUI ou NON.",
-                ["O", "N"])
-            s = self._softmax(lp).get("O", 0.5)
+                f"({', '.join(sorted({e.get('type', '') for e in ev if hasattr(e, 'get')}))}\n"
+                "Les preuves supportent-elles le claim ?"
+                "Reponds par UN mot (OUI ou NON). Reponse:",
+                ["OUI", "NON"])
+            s_raw = self._softmax(lp)
+            if not s_raw:
+                raise ValueError("no logprobs")
+            s = s_raw.get("OUI", 0.5)
             label = ("supports" if s >= 0.8 else "contradicts" if s <= 0.2 else "inconclusive")
             return {"supports": round(s, 3), "contradicts": round(1.0 - s, 3),
                     "unknown": 0.0, "label": label, "provider": "jev-logits"}
@@ -165,9 +175,13 @@ class JevLogitsProvider(DecisionProvider):
         try:
             lp = self._score_tokens(
                 f"ACTION PROPOSEE: {action[:2000]}\n"
-                "Cette action est-elle DESTRUCTIVE/irreversible ? OUI ou NON.",
-                ["O", "N"])
-            d = self._softmax(lp).get("O", 0.5)
+                "Cette action est-elle DESTRUCTIVE/irreversible ?"
+                "Reponds par UN mot (OUI ou NON). Reponse:",
+                ["OUI", "NON"])
+            d_raw = self._softmax(lp)
+            if not d_raw:
+                raise ValueError("no logprobs")
+            d = d_raw.get("OUI", 0.5)
             if d >= 0.75:
                 decision = "BLOCK"
             elif d >= 0.5:
@@ -195,6 +209,8 @@ class JevLogitsProvider(DecisionProvider):
                     "Note le chiffre unique: 0 1 2 3 4",
                     [str(i) for i in range(5)])
                 p = self._softmax(lp)
+                if not p:
+                    raise ValueError("no logprobs")
                 v = sum(int(d) * p[d] for d in p)
                 per[k] = round(v / 4.0, 3)
                 total += per[k]
@@ -219,6 +235,8 @@ class JevLogitsProvider(DecisionProvider):
                 f"CONTEXTE: {context[:2000]}\nChoix:\n{menu}\nMeilleure lettre ?",
                 letters)
             probs = self._softmax(lp)
+            if not probs:
+                raise ValueError("no logprobs")
             win = max(probs, key=probs.get)
             return {"choice": options[letters.index(win)], "distribution": probs,
                     "confidence": probs[win], "provider": "jev-logits"}
