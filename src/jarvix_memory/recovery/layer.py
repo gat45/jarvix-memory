@@ -41,18 +41,26 @@ class RecoveryLayer(MemoryLayer):
             metadata=meta,
         )
 
-    def diagnose(self, recovery_id: str, diagnosis: str, new_hypothesis: str = None) -> bool:
+    def diagnose(self, recovery_id: str, diagnosis: str, new_hypothesis: str = None) -> Dict[str, Any]:
         mem = self.db.get_memory(recovery_id)
         if not mem:
-            return False
+            return {"error": "not found"}
         meta = json.loads(mem.get("metadata", "{}"))
+        history = meta.get("hypothesis_history", [])
         meta["status"] = RecoveryStatus.DIAGNOSED.value
         meta["diagnosis"] = diagnosis
+        out = {"diagnosed": True}
         if new_hypothesis:
-            meta["hypothesis"] = new_hypothesis
-            meta.setdefault("hypothesis_history", []).append(new_hypothesis)
+            # REFLEX 6: never retry the same hypothesis twice
+            if new_hypothesis in history:
+                out = {"diagnosed": True, "duplicate_hypothesis": True,
+                       "reason": "hypothese deja testee — changer de piste"}
+            else:
+                meta["hypothesis"] = new_hypothesis
+                history.append(new_hypothesis)
+                meta["hypothesis_history"] = history
         self.db.update_memory(recovery_id, metadata=json.dumps(meta))
-        return True
+        return out
 
     def retry(self, recovery_id: str) -> Dict[str, Any]:
         mem = self.db.get_memory(recovery_id)
@@ -64,6 +72,9 @@ class RecoveryLayer(MemoryLayer):
             meta["status"] = RecoveryStatus.ABANDONED.value
             self.db.update_memory(recovery_id, metadata=json.dumps(meta))
             return {"abandoned": True, "reason": "max attempts reached", "attempt": attempt}
+        # REFLEX 6: a retry is only allowed after a fresh diagnosis
+        if meta.get("status") != RecoveryStatus.DIAGNOSED.value and attempt > 1:
+            return {"blocked": True, "reason": "diagnosis requise avant un nouveau retry"}
         meta["status"] = RecoveryStatus.RETRYING.value
         meta["attempt"] = attempt + 1
         self.db.update_memory(recovery_id, metadata=json.dumps(meta))

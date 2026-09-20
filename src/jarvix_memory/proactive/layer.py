@@ -146,3 +146,38 @@ class ProactiveMemory:
             "rules": len(self._rules),
             "rule_names": [r["name"] for r in self._rules],
         }
+
+    def monitor(self, context: str, experiment_tracker=None, recovery_layer=None,
+                max_reminders: int = 3) -> Dict[str, Any]:
+        """P1.7 — selective injection: should this context get a memory RIGHT NOW?
+        Combines: rules matching + refuted-experiment warnings + active recoveries.
+        Silence is the default — only warn when it matters."""
+        # 1. Rule-based reminders (quiet unless matched)
+        rule_reminders = []
+        try:
+            rule_reminders = self.should_inject(context)
+        except Exception as e:
+            logger.warning("proactive rules failed: %s", e)
+        # 2. Experiment guard: is the user about to redo a refuted path?
+        guard = None
+        if experiment_tracker:
+            guard = experiment_tracker.repeat_guard(context)
+        # 3. Active recoveries related to context
+        recoveries = []
+        if recovery_layer and context.strip():
+            words = [w for w in context.lower().split() if len(w) > 2]
+            try:
+                for r in recovery_layer.active_recoveries():
+                    hay = (r.get("content", "") + " " + (r.get("metadata", "") or "")).lower()
+                    if any(w in hay for w in words):
+                        recoveries.append(r)
+            except Exception:
+                pass
+        if recoveries and rule_reminders:
+            recoveries = recoveries[:1]
+        return {
+            "inject": rule_reminders[:max_reminders],
+            "refuted_path_warning": guard["refuted_paths"][:max_reminders] if guard and guard["blocked"] else [],
+            "active_failures": recoveries[:max_reminders],
+            "silent": not (rule_reminders or (guard and guard["blocked"]) or recoveries),
+        }

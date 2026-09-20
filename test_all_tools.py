@@ -16,7 +16,7 @@ def j(obj):
     return json.dumps(obj, default=str, ensure_ascii=False)
 
 print("=" * 60)
-print("  TEST COMPLET — 73 TOOLS MCP")
+print("  TEST COMPLET — 78 TOOLS MCP")
 print("=" * 60)
 
 # ══════════════════════════════════════════════════════════════
@@ -202,7 +202,7 @@ rec = router.recovery.record_failure("exp_001", "SIGSEGV at 0xc", hypothesis="de
 ok("recovery_fail", rec.id is not None and rec.metadata["status"] == "failed")
 
 r_diag = router.recovery.diagnose(rec.id, "null pointer in skel v81", new_hypothesis="skel version mismatch")
-ok("recovery_diagnose", r_diag is True)
+ok("recovery_diagnose", r_diag.get("diagnosed") is True, f"got {r_diag}")
 
 r1 = router.recovery.retry(rec.id)
 ok("recovery_retry", r1["retrying"] is True and r1["attempt"] == 2)
@@ -361,6 +361,19 @@ ok("hyp_repeat_guard", guard["blocked"] is True and len(guard["refuted_paths"]) 
 pend = router.experiment.pending_hypotheses()
 ok("hyp_pending", isinstance(pend, list))
 
+# 18. P1: COST / STRATEGY / RECOVERY / MONITOR (5 tools)
+print("\n[18/18] P1: COST / STRATEGY / RECOVERY / MONITOR")
+rc = router.db.recall_cost_aware("NPU Snapdragon", limit=3)
+ok("recall_cost", isinstance(rc, list) and all("_value" in m for m in rc))
+if rc:
+    ok("memory_usage_record", router.db.record_usage(rc[0]["id"]) is True)
+recommend = router.strategy.recommend("QNN crash")
+ok("strategy_recommend", "recommended" in recommend and "unproven" in recommend)
+ok("recovery_history", isinstance(router.recovery.recovery_history(5), list))
+mon = router.proactive.monitor("NPU test", experiment_tracker=router.experiment,
+                               recovery_layer=router.recovery)
+ok("proactive_monitor", "inject" in mon and "refuted_path_warning" in mon and "silent" in mon)
+
 # ══════════════════════════════════════════════════════════════
 # SUMMARY
 # ══════════════════════════════════════════════════════════════
@@ -368,6 +381,6 @@ print("\n" + "=" * 60)
 print(f"  RESULT: {P} passed, {F} failed out of {P+F}")
 print("=" * 60)
 if F == 0:
-    print("  ALL 73 TOOLS VERIFIED OK")
+    print("  ALL 78 TOOLS VERIFIED OK")
 else:
     print(f"  WARNING: {F} FAILURES")

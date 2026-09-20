@@ -690,5 +690,47 @@ def hyp_pending() -> str:
     return json.dumps(router.experiment.pending_hypotheses(), default=str, ensure_ascii=False)
 
 
+# ── P1: Cost-aware / Strategy recommend / Recovery guards / Proactive monitor ──
+
+@mcp.tool()
+@safe_tool
+def recall_cost(query: str, limit: int = 10, budget_tokens: int = None) -> str:
+    """P1.4 — hybrid recall ranked by value/cost (relevance*confidence*utility per token). Optional token budget."""
+    return json.dumps(router.db.recall_cost_aware(query, limit=limit, budget_tokens=budget_tokens),
+                      default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def memory_usage_record(memory_id: str) -> str:
+    """Reinforce a memory (+utility) after it proved useful in context."""
+    return json.dumps({"recorded": router.db.record_usage(memory_id)})
+
+
+@mcp.tool()
+@safe_tool
+def strategy_recommend(situation: str, min_samples: int = 1, cost_weight: float = 0.2) -> str:
+    """P1.5 — best strategies for a situation by value/cost: rate*relevance/(1+cost*avg_minutes). Unproven listed separately."""
+    return json.dumps(router.strategy.recommend(situation, min_samples=min_samples, cost_weight=cost_weight),
+                      default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def recovery_history(limit: int = 20) -> str:
+    """List recovered failure cycles (amount of learning from errors)."""
+    return json.dumps(router.recovery.recovery_history(limit=limit), default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def proactive_monitor(context: str) -> str:
+    """P1.7 — should memory interrupt NOW? rules + refuted-experiment guard + active failures. Default: silence."""
+    result = router.proactive.monitor(context,
+                                      experiment_tracker=router.experiment,
+                                      recovery_layer=router.recovery)
+    return json.dumps(result, default=str, ensure_ascii=False)
+
+
 if __name__ == "__main__":
     mcp.run()

@@ -231,6 +231,27 @@ class Database:
                 results.append(r)
         return results[:limit]
 
+    def recall_cost_aware(self, query: str, limit: int = 10, budget_tokens: int = None) -> List[Dict]:
+        """P1.4 — hybrid search re-ranked by value/cost, with optional token budget."""
+        from .cost import rerank
+        base = self.search_hybrid(query, limit=limit * 3)
+        reranked = rerank(base, lambda m: (m.get("_score") or 0.5) if "_score" in m else 0.5)
+        if budget_tokens is not None:
+            out, spent = [], 0
+            for m in reranked:
+                cost = m.get("_cost_tokens", 0)
+                if spent + cost > budget_tokens:
+                    break
+                spent += cost
+                out.append(m)
+            return out
+        return reranked[:limit]
+
+    def record_usage(self, memory_id: str, used: bool = True) -> bool:
+        """Reinforcement: increment utility when a memory is actually used."""
+        from .cost import record_usage as _ru
+        return _ru(self, memory_id, used=used)
+
     def search_fts(self, query: str, limit: int = 50) -> List[Dict]:
         if not query or query.strip() == "":
             return []
