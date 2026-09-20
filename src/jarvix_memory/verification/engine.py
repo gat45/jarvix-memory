@@ -3,7 +3,7 @@ from ..core.models import Memory, MemoryType
 import json
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class VerificationEngine:
             "description": description,
             "passed": passed,
             "details": details or {},
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
 
         meta = json.loads(mem.get("metadata", "{}"))
@@ -79,7 +79,7 @@ class VerificationEngine:
                 verdict = "inconclusive"
 
         meta["verdict"] = verdict
-        meta["resolved_at"] = datetime.utcnow().isoformat()
+        meta["resolved_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         meta["evidence_summary"] = {
             "total": len(evidence_list),
             "passed": sum(1 for e in evidence_list if e.get("passed")),

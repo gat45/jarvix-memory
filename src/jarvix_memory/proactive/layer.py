@@ -1,7 +1,7 @@
 from ..core.database import Database
 import json
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import logging
 import uuid
 
@@ -40,7 +40,7 @@ class ProactiveMemory:
             "min_importance": min_importance,
             "priority": priority,
             "enabled": 1,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
         conn = self.db._connect()
         conn.execute(
@@ -123,7 +123,7 @@ class ProactiveMemory:
         else:
             rows = self.db.search_fts(context, limit=20)
 
-        cutoff = datetime.utcnow() - timedelta(hours=rule.get("max_age_hours", 24))
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=rule.get("max_age_hours", 24))
         matches = []
         for r in rows:
             meta = json.loads(r.get("metadata", "{}"))

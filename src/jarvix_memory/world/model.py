@@ -2,7 +2,7 @@ from ..core.database import Database
 from ..core.models import Memory, MemoryType
 import json
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class WorldModel:
         state.setdefault("beliefs", {})[key] = {
             "value": value,
             "confidence": confidence,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
         state["initialized"] = True
         memory = Memory(
@@ -71,7 +71,7 @@ class WorldModel:
         actual = {
             "result": actual_result,
             "cost": actual_cost or {},
-            "observed_at": datetime.utcnow().isoformat(),
+            "observed_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
         meta.setdefault("predictions", []).append(actual)
         meta["status"] = "observed"
@@ -176,7 +176,7 @@ class WorldModel:
             "actual": actual, "env_id": env_id,
             "abs_error": round(abs_err, 4),
             "rel_error": round(rel_err, 4),
-            "observed_at": datetime.utcnow().isoformat(),
+            "observed_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         })
         meta["status"] = "observed"
         meta["rel_error"] = round(rel_err, 4)

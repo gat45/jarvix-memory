@@ -7,7 +7,7 @@ the same experiment twice.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class ExperimentTracker:
 
     def propose_hypothesis(self, statement: str, env_id: Optional[str] = None,
                            rationale: str = None) -> Dict:
-        meta = {"h_status": "PROPOSED", "experiments": [], "created_at": datetime.utcnow().isoformat()}
+        meta = {"h_status": "PROPOSED", "experiments": [], "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
         if env_id:
             meta["env_id"] = env_id
         if rationale:
@@ -48,7 +48,7 @@ class ExperimentTracker:
             "success": success,
             "env_id": env_id,
             "measurements": measurements or {},
-            "ran_at": datetime.utcnow().isoformat(),
+            "ran_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
         exp = self._insert("experiment", f"[{name}] {result} (ENV {env_id or 'n/a'})", exp_meta)
 
@@ -77,7 +77,7 @@ class ExperimentTracker:
         meta = json.loads(hyp_mem.get("metadata", "{}"))
         exps = meta.get("experiments", [])
         meta["h_status"] = verdict.upper()
-        meta["concluded_at"] = datetime.utcnow().isoformat()
+        meta["concluded_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         # Negative knowledge: enough refuting attempts -> do_not_repeat
         fails = sum(1 for e in exps if not e.get("success"))
         if verdict == "refuted" or fails >= REFUTED_TEST_LIMIT:

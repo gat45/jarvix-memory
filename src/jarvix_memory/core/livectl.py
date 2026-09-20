@@ -10,7 +10,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class LiveContext:
 
     def _fresh_semantics(self, query: str, limit: int = 5) -> List[Dict]:
         rows = self.db.search_hybrid(query, limit=limit * 3)
-        cutoff = (datetime.utcnow() - timedelta(hours=FRESH_HOURS)).isoformat()
+        cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=FRESH_HOURS)).isoformat()
         return [m for m in rows if (m.get("created_at") or "") > cutoff][:limit]
 
     def bundle(self, query: str = "", max_tokens: int = 4000) -> Dict:
@@ -80,7 +80,7 @@ class LiveContext:
                 add("recovery", {"content": (rcv.get("content") or "")[:150],
                                  "attempt": meta.get("attempt")}, 40)
         buf["estimated_tokens"] = est
-        buf["ts"] = datetime.utcnow().isoformat()
+        buf["ts"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         buf["status"] = "OK_RELIABLE" if buf["items"] else "NO_RELIABLE_MEMORY"
         return buf
 
@@ -157,7 +157,7 @@ class LiveContext:
             metadata={"h_status": "PROPOSED", "kind": "inventory_drift",
                       "old_files": old_files, "new_files": new_files,
                       "root": root,
-                      "detected_at": datetime.utcnow().isoformat()}))
+                      "detected_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}))
         logger.info("inventory drift: %s (%.0f%%)", root, delta * 100)
 
     def start_watch(self) -> bool:

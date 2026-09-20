@@ -11,7 +11,7 @@ import platform
 import logging
 import subprocess
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def _capture_base() -> Dict:
         "os_release": platform.release(),
         "python": platform.python_version(),
         "machine": platform.machine(),
-        "captured_at": datetime.utcnow().isoformat(),
+        "captured_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     }
     # git commit if inside a repo
     try:

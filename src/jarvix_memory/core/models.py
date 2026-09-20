@@ -1,8 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 import uuid
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class MemoryStatus(str, Enum):
@@ -47,7 +51,7 @@ class Memory(BaseModel):
     status: MemoryStatus = MemoryStatus.PROVISIONAL
     content: str
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     observed_at: Optional[datetime] = None
     valid_from: Optional[datetime] = None
     valid_until: Optional[datetime] = None
@@ -70,8 +74,4 @@ class Memory(BaseModel):
     cost: MemoryCost = Field(default_factory=MemoryCost)
     embedding: Optional[List[float]] = None
 
-    class Config:
-        use_enum_values = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict(use_enum_values=True)

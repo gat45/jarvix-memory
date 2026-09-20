@@ -11,7 +11,7 @@ import re
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class PerceptionEngine:
                 "sha256": h,
                 "size": p.stat().st_size,
                 "kind": self._kind(p),
-                "perceived_at": datetime.utcnow().isoformat(),
+                "perceived_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             }
             if meta["kind"] == "text":
                 return self._ingest_text(p, meta, note)

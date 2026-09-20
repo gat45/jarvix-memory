@@ -14,7 +14,7 @@ import json
 import re
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +168,7 @@ class JEV:
             confidence=result.get("confidence") or result.get("destructive_prob") or 0.7,
             source="jev",
             metadata={"jev_kind": kind, "subject": subject, "result": result,
-                      "decided_at": datetime.utcnow().isoformat()}))
+                      "decided_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}))
 
     def route(self, query: str, log: bool = True) -> Dict:
         r = self.provider.route(query)

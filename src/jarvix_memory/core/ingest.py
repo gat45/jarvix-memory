@@ -10,7 +10,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def scan_directory(root: str, max_files: int = MAX_FILES_PER_DIR,
                 pass
     return {"path": str(r), "total_files": total_files, "total_size": total_size,
             "counts": counts, "sizes": sizes, "subdirs": sorted(subdirs)[:12],
-            "skipped_due_to_cap": skipped, "scanned_at": datetime.utcnow().isoformat()}
+            "skipped_due_to_cap": skipped, "scanned_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
 
 
 def ingest_directory(db, root: str, note: str = None,
