@@ -109,20 +109,56 @@ class LiveContext:
         from .ingest import ingest_directory
         for root in self._resolve_scan_dirs():
             try:
-                ingest_directory(self.db, root, note="live-watcher",
-                                 max_files=200000)
+                res = ingest_directory(self.db, root, note="live-watcher",
+                                       max_files=200000)
+                self._check_inventory_drift(root, res)
             except Exception as e:
                 logger.warning("live ingest failed %s: %s", root, e)
         try:
             from .autopush import push_project, autolog_dir
-            target = self.autolog_dir or str(autolog_dir())
-            self.last_push = push_project(
-                self.db, target,
-                project_id=self._cfg.get("live_project", "live"),
-                message=f"live: index mis a jour {datetime.now().strftime('%H:%M')}",
-                confirm=True)
+            push_project(self.db,
+                         self.autolog_dir or str(autolog_dir()),
+                         project_id=self._cfg.get("live_project", "live"),
+                         message=f"live: index mis a jour {datetime.now().strftime('%H:%M')}",
+                         confirm=True)
         except Exception as e:
             logger.warning("live push failed: %s", e)
+
+    def _check_inventory_drift(self, root: str, delta_threshold: float = 0.10):
+        """Real-time change detection: if latest inventory differs by >10% files
+        from the previous scan of the SAME root, register a drift hypothesis."""
+        conn = self.db._connect()
+        rows = conn.execute(
+            "SELECT content, metadata FROM memories WHERE type='semantic' "
+            "AND content LIKE ? ORDER BY created_at DESC LIMIT 2",
+            (f"PROJET INVENTAIRE {root}",)).fetchall()
+        if len(rows) < 2:
+            return
+        new_meta = json.loads(rows[0][1] or "{}")
+        old_meta = json.loads(rows[1][1] or "{}")
+        new_files, old_files = new_meta.get("files", 0), old_meta.get("files", 0)
+        if not old_files:
+            return
+        delta = (new_files - old_files) / old_files
+        if abs(delta) < delta_threshold:
+            return
+        tag = f"DRIFT {root} {round(delta, 2)}%"
+        dup = conn.execute(
+            "SELECT id FROM memories WHERE type='hypothesis' AND content=? LIMIT 1",
+            (tag,)).fetchone()
+        if dup:
+            return
+        from ..core.models import Memory
+        self.db.insert_memory(Memory(
+            type="hypothesis",
+            content=tag,
+            confidence=0.9,
+            source="live-watcher",
+            metadata={"h_status": "PROPOSED", "kind": "inventory_drift",
+                      "old_files": old_files, "new_files": new_files,
+                      "root": root,
+                      "detected_at": datetime.utcnow().isoformat()}))
+        logger.info("inventory drift: %s (%.0f%%)", root, delta * 100)
 
     def start_watch(self) -> bool:
         if self.watch_thread and self.watch_thread.is_alive():

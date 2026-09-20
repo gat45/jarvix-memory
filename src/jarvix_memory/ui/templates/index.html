@@ -58,6 +58,7 @@ th{color:#00d4ff;font-weight:600;font-size:.75rem}
   <button onclick="show('llama',this)">llama.cpp</button>
   <button onclick="show('device',this)">Device</button>
   <button onclick="show('lab',this)">Lab</button>
+  <button onclick="show('live',this)">Live</button>
   <button onclick="show('admin',this)">Admin</button>
 </div>
 
@@ -162,6 +163,15 @@ th{color:#00d4ff;font-weight:600;font-size:.75rem}
   </div>
 </div>
 
+<!-- LIVE -->
+<div id="live" class="tab">
+  <div class="panel"><h2>Contexte live pour le LLM</h2>
+    <div class="row"><input id="liveQ" placeholder="Filtrer (ex: NPU profiling)"><button class="btn" onclick="liveBundle()">Rafraichir bundle</button>
+    <button class="btn ok" id="liveWatchBtn" onclick="liveWatch()">Watcher</button></div>
+    <div class="muted" id="liveMeta"></div>
+    <div id="liveItems" class="list" style="max-height:460px;margin-top:8px"></div></div>
+</div>
+
 <!-- ADMIN -->
 <div id="admin" class="tab">
   <div class="grid">
@@ -185,7 +195,21 @@ const $=id=>document.getElementById(id);
 async function api(url,opt){const r=await fetch(url,opt);return r.json();}
 function esc(s){return (s||'').replace(/</g,'&lt;');}
 function show(name,btn){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));$(''+name).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
-  if(name==='dash')loadDash();if(name==='layers')initLayers();if(name==='files')loadImportant();if(name==='llama'){loadLlamaStatus();loadModels();}if(name==='device')loadDevice();if(name==='admin')initAdmin();if(name==='lab')loadLab();}
+  if(name==='dash')loadDash();if(name==='layers')initLayers();if(name==='files')loadImportant();if(name==='llama'){loadLlamaStatus();loadModels();}if(name==='device')loadDevice();if(name==='admin')initAdmin();if(name==='lab')loadLab();if(name==='live')liveBundle();}
+const kindColor={inventory:'#00d4ff',fact:'#00ff88',hypothesis:'#ffaa00',recovery:'#ff6666'};
+async function liveBundle(){const b=await api('/api/live?query='+encodeURIComponent($('liveQ').value||''));
+$('liveMeta').textContent=`status=${b.status} · ${b.items.length} items · ~${b.estimated_tokens} tokens · ${b.ts.substring(0,16)}`;
+$('liveItems').innerHTML=b.items.map(i=>{
+const c=kindColor[i.kind]||'#00d4ff';let body='';
+if(i.kind==='inventory')body=`<b>${esc(i.root)}</b> — ${i.files||'?'} fichiers<br><span class="muted">${esc((i.summary||'').substring(0,300))}</span>`;
+else if(i.kind==='recovery')body=`[ECHEC tente ${i.attempt}] ${esc(i.content)}`;
+else if(i.kind==='hypothesis')body=`<b>${i.status}</b> ${esc(i.content)}`;
+else body=esc((i.content||'').substring(0,260));
+return `<div class="item" style="border-left-color:${c}"><span class="tag" style="color:${c}">${i.kind}</span> ${body}</div>`}).join('')||'<div class="muted">Vide</div>';}
+async function liveWatch(){window._watchOn=!window._watchOn;
+const d=await api('/api/live/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:window._watchOn?'start':'stop'})});
+$('liveWatchBtn').textContent=window._watchOn?'Watcher ON':'Watcher';
+$('liveMeta').textContent+=(window._watchOn?' watcher demarre ':' watcher arrete ')+JSON.stringify(d);}
 function loadLab(){requestAnimationFrame(()=>{try{api('/api/lab/hyp/pending').then(d=>{$('lbHypList').innerHTML=(d.hypotheses||[]).map(h=>`<div class="item"><b>${esc((h.content||'').substring(0,60))}</b> <span class="muted">${h.status} · ${h.attempts}essai(s)</span></div>`).join('')||'<div class="muted">Aucune hypothese en attente</div>'})}catch(e){}})}
 async function labVerify(){const p=$('lbVerifyOut');p.style.display='block';p.textContent='execution...';try{let checks=[];try{checks=JSON.parse($('lbChecks').value||'[]')}catch(e){checks=[]}
 const d=await api('/api/lab/verify-auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claim:$('lbClaim').value,checks})});p.textContent=JSON.stringify(d,null,1)}catch(e){p.textContent='Erreur: '+e}}

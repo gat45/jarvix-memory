@@ -71,11 +71,34 @@ class LLMReasoner:
 
         return "\n".join(lines)
 
-    def reason(self, query: str, max_tokens: int = 1024, temperature: float = 0.3) -> Dict:
-        """Full RAG pipeline: retrieve + reason."""
+    def reason(self, query: str, max_tokens: int = 1024, temperature: float = 0.3,
+               live_max_tokens: int = 1200) -> Dict:
+        """RAG + LIVE: retrieve memories + bundle the real-time state into context."""
         # 1. Retrieve
         memories = self._retrieve(query)
         context = self._build_context(memories)
+
+        # 1b. live context bundle (state NOW: inventories/hypotheses/recoveries)
+        live_part = ""
+        try:
+            from ..core.livectl import LiveContext
+            live = LiveContext(self.db)
+            b = live.bundle(query, max_tokens=live_max_tokens)
+            if b["status"] == "OK_RELIABLE":
+                lines = []
+                for it in b["items"]:
+                    if it["kind"] == "inventory":
+                        lines.append(f"- [INVENTAIRE] {it['root']} : {it['files']} fichiers — "
+                                     f"{it['summary'][:140]}")
+                    elif it["kind"] == "hypothesis":
+                        lines.append(f"- [{it['status']}] {it['content']}")
+                    elif it["kind"] == "recovery":
+                        lines.append(f"- [ECHEC ACTIF] {it['content']}")
+                    else:
+                        lines.append(f"- [{it.get('conf', '')}] {it.get('content', '')[:180]}")
+                live_part = "## CONTEXTE LIVE DU PROJET\n" + "\n".join(lines)
+        except Exception as e:
+            logger.warning("live bundle indisponible: %s", e)
 
         # 2. Build prompt
         messages = [
@@ -83,14 +106,14 @@ class LLMReasoner:
                 "role": "system",
                 "content": (
                     "Tu es JARVIX, un assistant IA spécialisé dans la mémoire cognitive. "
-                    "Tu as accès à une base de mémoires organisées par couches. "
-                    "Utilise le contexte fourni pour répondre de manière précise et concise. "
-                    "Cite les sources quand pertinent. Réponds en français."
+                    "Tu as accès au contexte LIVE du projet (inventaires disque récents, hypothèses "
+                    " réfutées à ne pas re-tester, échecs en cours). Utilise-le pour répondre de "
+                    "manière précise et concise. Cite les sources quand pertinent. Réponds en français."
                 ),
             },
             {
                 "role": "user",
-                "content": f"## Mémoires récupérées\n{context}\n\n## Question\n{query}",
+                "content": f"{live_part}\n\n{context}\n\n## Question\n{query}",
             },
         ]
 
@@ -106,6 +129,7 @@ class LLMReasoner:
             "response": response,
             "memories_used": len(memories),
             "memory_ids": [m.get("id") for m in memories],
+            "live": bool(live_part),
         }
 
     def summarize(self, text: str, max_tokens: int = 256) -> str:
