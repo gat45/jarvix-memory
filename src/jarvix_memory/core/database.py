@@ -271,22 +271,33 @@ class Database:
         if not query or query.strip() == "":
             return []
         conn = self._connect()
-        # Use LIKE search — reliable, no FTS index dependency
+        # LIKE prefilter (fast, substring) then WHOLE-WORD post-rank:
+        # full-word matches float to the top, partial matches sink —
+        # junk queries built on common short words stop polluting top results.
+        import re as _re
         terms = [t.strip() for t in query.replace('"', ' ').split() if t.strip()]
         if not terms:
             return []
         conditions = " AND ".join(["content LIKE ?" for _ in terms])
         params = [f"%{t}%" for t in terms]
-        params.append(limit)
+        params.append(max(limit * 3, limit))
         try:
             cursor = conn.execute(
-                f"SELECT * FROM memories WHERE {conditions} ORDER BY created_at DESC LIMIT ?",
+                f"SELECT * FROM memories WHERE {conditions} LIMIT ?",
                 params
             )
-            return [dict(row) for row in cursor.fetchall()]
+            rows = [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.warning("search_fts failed: %s", e)
             return []
+
+        def word_score(m: Dict) -> int:
+            c = (m.get("content") or "").lower()
+            return sum(1 for t in terms if len(t) > 2 and
+                       _re.search(rf"\b{_re.escape(t.lower())}\b", c))
+
+        rows.sort(key=lambda m: (word_score(m), m.get("created_at") or ""), reverse=True)
+        return rows[:limit]
 
     def search_by_type(self, memory_type: str, limit: int = 50) -> List[Dict]:
         conn = self._connect()

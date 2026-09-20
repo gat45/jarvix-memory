@@ -22,6 +22,11 @@ logger.info("Using DB: %s", DB_PATH)
 mcp = FastMCP("jarvix-memory", instructions="Persistent cognitive memory system for AI agents. Use tools to store, retrieve, verify, and learn from experiences.")
 
 router = MemoryRouter(db_path=DB_PATH)
+# Warm vector model in background — kill the 8s cold-start on first recall
+if router.db.vector is not None:
+    router.db.vector.warm()
+# Scheduled consolidation: auto-archive stale actions / merge / decay every 6h
+router.consolidation.start_scheduler(interval_hours=6.0)
 
 
 def safe_tool(func):

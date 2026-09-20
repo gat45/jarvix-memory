@@ -12,6 +12,34 @@ logger = logging.getLogger(__name__)
 class ConsolidationService:
     def __init__(self, db: Database):
         self.db = db
+        self._scheduler_thread = None
+        self._stop = False
+
+    def start_scheduler(self, interval_hours: float = 6.0):
+        """Run sleep cycles automatically every interval_hours (daemon).
+        First cycle after ~1 minute of startup, then periodic."""
+        if self._scheduler_thread and self._scheduler_thread.is_alive():
+            return False
+        import threading, time as _time
+
+        def _loop():
+            # small delay so servers boot before the first cycle
+            _time.sleep(60)
+            self.run_sleep_cycle()
+            while not self._stop:
+                _time.sleep(interval_hours * 3600)
+                if self._stop:
+                    break
+                self.run_sleep_cycle()
+
+        self._scheduler_thread = threading.Thread(
+            target=_loop, daemon=True, name="jarvix-consolidation")
+        self._scheduler_thread.start()
+        logger.info("Consolidation scheduler started (every %.1fh)", interval_hours)
+        return True
+
+    def stop_scheduler(self):
+        self._stop = True
 
     def decay_importance(self, decay_factor: float = 0.95, min_importance: float = 0.1):
         conn = self.db._connect()

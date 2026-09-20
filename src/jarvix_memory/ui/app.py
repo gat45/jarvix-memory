@@ -50,6 +50,10 @@ def save_config():
 DB_PATH = PKG_ROOT / "jarvix_memory.db"
 router = MemoryRouter(db_path=str(DB_PATH))
 vector_store = router.db.vector
+if vector_store is not None:
+    vector_store.warm()  # preload model in background
+# Scheduled consolidation: every 6h
+router.consolidation.start_scheduler(interval_hours=6.0)
 llm = LLMReasoner(router.db, vector_store=vector_store,
                   base_url=f"http://127.0.0.1:{CONFIG['llama_port']}")
 

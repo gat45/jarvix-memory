@@ -2,6 +2,7 @@
 
 import sqlite3
 import json
+import threading
 import logging
 from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
 
@@ -20,6 +21,7 @@ class VectorStore:
         self.db = db
         self._model_name = model_name
         self._model: Optional["SentenceTransformer"] = None
+        self._warm_done = False
         self._init_table()
 
     @property
@@ -38,6 +40,24 @@ class VectorStore:
             logger.info("Loading embedding model: %s", self._model_name)
             self._model = SentenceTransformer(self._model_name)
         return self._model
+
+    def warm(self) -> bool:
+        """Preload the embedding model in background (kills the 8-10s cold start
+        on the first query). Called by MCP/UI servers at startup."""
+        if self._warm_done:
+            return False
+        self._warm_done = True
+
+        def _bg():
+            try:
+                _ = self.model
+                self.model.encode("warmup", normalize_embeddings=True)
+                logger.info("Vector store warm")
+            except Exception as e:
+                logger.warning("Vector warm failed: %s", e)
+
+        threading.Thread(target=_bg, daemon=True, name="jarvix-vector-warm").start()
+        return True
 
     def _init_table(self):
         conn = self.db._connect()
