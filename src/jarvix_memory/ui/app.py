@@ -545,6 +545,20 @@ def api_rebuild():
     return jsonify({"started": True, "note": "re-embed en arrière-plan"})
 
 
+@app.route("/api/autopush", methods=["POST"])
+def api_autopush():
+    """Git autopilot: export + commit + push per project_id."""
+    from jarvix_memory.core.autopush import push_project
+    d = request.json or {}
+    try:
+        result = push_project(router.db, str(PKG_ROOT),
+                              project_id=d.get("project_id"),
+                              message=d.get("message"))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/health")
 def api_health():
     return jsonify({

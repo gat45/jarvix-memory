@@ -16,7 +16,7 @@ def j(obj):
     return json.dumps(obj, default=str, ensure_ascii=False)
 
 print("=" * 60)
-print("  TEST COMPLET — 86 TOOLS MCP")
+print("  TEST COMPLET — 87 TOOLS MCP")
 print("=" * 60)
 
 # ══════════════════════════════════════════════════════════════
@@ -398,6 +398,11 @@ ok("jev_score", "score" in js and "label" in js)
 jd = router.jev.decide("choose a path", ["opt A", "opt B"])
 ok("jev_decide", jd["choice"] in ("opt A", "opt B"), f"got {jd['choice']}")
 
+# 20. GIT AUTOPILOT (1 tool — export tested locally, push not repeated in tests)
+from jarvix_memory.core.autopush import export_project
+exp = export_project(router.db, ".", project_id="unit-test-scope")
+ok("autopush_export", _os.path.exists(exp["export_path"]) and exp["memories"] >= 0, f"got {exp.get('memories')}")
+
 # ══════════════════════════════════════════════════════════════
 # SUMMARY
 # ══════════════════════════════════════════════════════════════
@@ -405,6 +410,6 @@ print("\n" + "=" * 60)
 print(f"  RESULT: {P} passed, {F} failed out of {P+F}")
 print("=" * 60)
 if F == 0:
-    print("  ALL 86 TOOLS VERIFIED OK")
+    print("  ALL 87 TOOLS VERIFIED OK")
 else:
     print(f"  WARNING: {F} FAILURES")

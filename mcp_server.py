@@ -793,5 +793,17 @@ def jev_decide(context: str, options: str) -> str:
     return json.dumps(router.jev.decide(context, opts))
 
 
+# ── Git autopilot ──────────────────────────────────────────────
+
+@mcp.tool()
+@safe_tool
+def autopush(project_id: str = None, message: str = None) -> str:
+    """Export memories grouped by project_id to docs/memoire_<project>.md, commit and push to GitHub."""
+    from jarvix_memory.core.autopush import push_project
+    repo_path = str(Path(__file__).parent)
+    result = push_project(router.db, repo_path, project_id=project_id, message=message)
+    return json.dumps(result, ensure_ascii=False)
+
+
 if __name__ == "__main__":
     mcp.run()

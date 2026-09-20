@@ -137,6 +137,7 @@ th{color:#00d4ff;font-weight:600;font-size:.75rem}
     <div class="panel"><h2>Configuration</h2><div id="cfgForm"></div><button class="btn" onclick="saveConfig()" style="margin-top:10px">Sauver config</button></div>
     <div class="panel"><h2>Maintenance</h2><div class="row"><button class="btn sec" onclick="runConsolidation()">Consolidation (sleep cycle)</button></div>
       <div class="row"><button class="btn sec" onclick="rebuildEmb()">Reconstruire embeddings (bg)</button></div>
+      <div class="row"><button class="btn ok" onclick="autopush()">Publier memoire sur GitHub</button></div>
       <div class="row"><button class="btn" onclick="genBilan(false)">Generer bilan</button><button class="btn" onclick="genBilan(true)">Bilan + analyse LLM</button></div>
       <pre id="bilanOut" style="max-height:350px;display:none"></pre></div>
     <div class="panel"><h2>Claims (verification)</h2><div id="claimList" class="list" style="max-height:250px"></div></div>
@@ -241,6 +242,7 @@ o[k]=v});
 await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});alert('Config sauvee');}
 async function runConsolidation(){const r=await api('/api/consolidation',{method:'POST'});alert('Consolidation: '+JSON.stringify(r))}
 async function rebuildEmb(){await api('/api/rebuild-embeddings',{method:'POST'});alert('Re-embed lance en arriere-plan')}
+async function autopush(){const el=document.getElementById('bilanOut');el.style.display='block';el.textContent='export + commit + push...';const d=await api('/api/autopush',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});el.textContent=JSON.stringify(d,null,1);} 
 async function genBilan(an){const p=$('bilanOut');p.style.display='block';p.textContent='generation...';
 const r=await api('/api/bilan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({analyze:an,save:true})});p.textContent=r.report;}
 async function loadClaims(){const r=await api('/api/claims');
