@@ -122,6 +122,19 @@ class RuleBasedProvider(DecisionProvider):
                 "label": "high" if weighted >= 0.75 else ("medium" if weighted >= 0.45 else "low"),
                 "per_criterion": {k: v for k, v in grid.items() if k != "_weights"}}
 
+    def decide(self, context: str, options: list) -> Dict:
+        """Deterministic Choice over explicit options (filter-score each option)."""
+        if not options:
+            return {"choice": None, "distribution": {}, "confidence": 0.0,
+                    "provider": "rules"}
+        probs = {}
+        for opt in options:
+            r = self.filter({"content": opt, "confidence": 0.8}, context)
+            probs[opt] = round(r.get("prob", 0.0), 3)
+        winner = max(options, key=lambda o: probs.get(o, 0.0))
+        return {"choice": winner, "distribution": probs,
+                "confidence": probs.get(winner, 0.0), "provider": "rules"}
+
 
 class JEV:
     """Facade around a DecisionProvider — the jarvix decision brain.
