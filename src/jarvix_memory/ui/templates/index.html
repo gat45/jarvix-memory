@@ -57,6 +57,7 @@ th{color:#00d4ff;font-weight:600;font-size:.75rem}
   <button onclick="show('files',this)">Fichiers</button>
   <button onclick="show('llama',this)">llama.cpp</button>
   <button onclick="show('device',this)">Device</button>
+  <button onclick="show('lab',this)">Lab</button>
   <button onclick="show('admin',this)">Admin</button>
 </div>
 
@@ -131,6 +132,36 @@ th{color:#00d4ff;font-weight:600;font-size:.75rem}
   <div class="panel"><h2>Etat du monde (beliefs + predictions)</h2><div id="worldList" class="list" style="max-height:250px"></div></div>
 </div>
 
+<!-- LAB -->
+<div id="lab" class="tab">
+  <div class="grid">
+    <div class="panel"><h2>verify_auto (preuves deterministes)</h2>
+      <input id="lbClaim" placeholder="Claim a verifier...">
+      <textarea id="lbChecks" rows="5" placeholder='[{"type":"file_exists","path":"."}, {"type":"command","cmd":["python","--version"]}, {"type":"measurement","actual":10,"op":"gt","expected":5}]'></textarea>
+      <button class="btn" onclick="labVerify()">Executer checks</button>
+      <pre id="lbVerifyOut" style="display:none;margin-top:8px"></pre></div>
+    <div class="panel"><h2>Hypotheses (do_not_repeat)</h2>
+      <div class="row"><input id="lbHyp" placeholder="Hypothese testable..."><button class="btn" onclick="hypPropose()">Proposer</button></div>
+      <div id="lbHypList" class="list" style="max-height:180px"></div>
+      <div style="margin-top:6px" class="muted">Repetition d'experiences (garde antirefus cf P0)</div>
+      <div class="row"><input id="lbRepeat" placeholder="Re-test d'une piste?"><button class="btn sec" onclick="hypGuard()">Guard</button></div>
+      <pre id="lbHypOut" style="display:none;margin-top:8px"></pre></div>
+    <div class="panel"><h2>Perception + Environment</h2>
+      <div class="row"><input id="lbPerceive" placeholder="Chemin artefact (log, image...)"><button class="btn" onclick="perceive()">Percevoir</button></div>
+      <div class="row"><button class="btn sec" onclick="envCapture()">Capturer environnement</button></div>
+      <pre id="lbEnvOut" style="display:none;margin-top:6px;max-height:200px"></pre></div>
+    <div class="panel"><h2>JEV (jugement type)</h2>
+      <div class="row"><input id="lbJevQ" placeholder="Query pour route..."><button class="btn sec" onclick="jevRoute()">Route</button></div>
+      <div class="row"><input id="lbJevA" placeholder="Action pour gate..."><button class="btn sec" onclick="jevGate()">Gate</button></div>
+      <pre id="lbJevOut" style="display:none;margin-top:6px;max-height:200px"></pre></div>
+    <div class="panel"><h2>Monde quantitatif (calibration)</h2>
+      <div class="row"><input id="lbQk" placeholder="cle (ex tok_s)" style="flex:2"><input id="lbQmin" type="number" placeholder="min"><input id="lbQmax" type="number" placeholder="max"><button class="btn" onclick="quantPredict()">Predict</button></div>
+      <div class="row"><input id="lbQid" placeholder="prediction_id" style="flex:2"><input id="lbQa" type="number" placeholder="valeur reelle"><button class="btn" onclick="quantObserve()">Observation</button></div>
+      <button class="btn sec" onclick="quantCalib()" style="margin-bottom:6px">Calibration</button>
+      <pre id="lbQuantOut" style="display:none;max-height:220px"></pre></div>
+  </div>
+</div>
+
 <!-- ADMIN -->
 <div id="admin" class="tab">
   <div class="grid">
@@ -154,7 +185,19 @@ const $=id=>document.getElementById(id);
 async function api(url,opt){const r=await fetch(url,opt);return r.json();}
 function esc(s){return (s||'').replace(/</g,'&lt;');}
 function show(name,btn){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));$(''+name).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
-  if(name==='dash')loadDash();if(name==='layers')initLayers();if(name==='files')loadImportant();if(name==='llama'){loadLlamaStatus();loadModels();}if(name==='device')loadDevice();if(name==='admin')initAdmin();}
+  if(name==='dash')loadDash();if(name==='layers')initLayers();if(name==='files')loadImportant();if(name==='llama'){loadLlamaStatus();loadModels();}if(name==='device')loadDevice();if(name==='admin')initAdmin();if(name==='lab')loadLab();}
+function loadLab(){requestAnimationFrame(()=>{try{api('/api/lab/hyp/pending').then(d=>{$('lbHypList').innerHTML=(d.hypotheses||[]).map(h=>`<div class="item"><b>${esc((h.content||'').substring(0,60))}</b> <span class="muted">${h.status} · ${h.attempts}essai(s)</span></div>`).join('')||'<div class="muted">Aucune hypothese en attente</div>'})}catch(e){}})}
+async function labVerify(){const p=$('lbVerifyOut');p.style.display='block';p.textContent='execution...';try{let checks=[];try{checks=JSON.parse($('lbChecks').value||'[]')}catch(e){checks=[]}
+const d=await api('/api/lab/verify-auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claim:$('lbClaim').value,checks})});p.textContent=JSON.stringify(d,null,1)}catch(e){p.textContent='Erreur: '+e}}
+async function hypPropose(){const p=$('lbHypOut');p.style.display='block';const d=await api('/api/lab/hyp/propose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({statement:$('lbHyp').value})});p.textContent='Proponu: '+JSON.stringify(d,null,1);$('lbHyp').value='';loadLab();}
+async function hypGuard(){const p=$('lbHypOut');p.style.display='block';const d=await api('/api/lab/hyp/guard?q='+encodeURIComponent($('lbRepeat').value));p.textContent=JSON.stringify(d,null,1)}
+async function perceive(){const p=$('lbEnvOut');p.style.display='block';p.textContent='perception...';const d=await api('/api/lab/perceive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:$('lbPerceive').value})});p.textContent=JSON.stringify(d,null,1)}
+async function envCapture(){const p=$('lbEnvOut');p.style.display='block';p.textContent='capture...';const d=await api('/api/lab/env/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});p.textContent=JSON.stringify(d,null,1)}
+async function jevRoute(){const p=$('lbJevOut');p.style.display='block';const d=await api('/api/lab/jev/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:$('lbJevQ').value})});p.textContent=JSON.stringify(d,null,1)}
+async function jevGate(){const p=$('lbJevOut');p.style.display='block';const d=await api('/api/lab/jev/gate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:$('lbJevA').value})});p.textContent=JSON.stringify(d,null,1)}
+async function quantPredict(){const p=$('lbQuantOut');p.style.display='block';const d=await api('/api/lab/quant/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:$('lbQk').value,range_min:+$('lbQmin').value,range_max:+$('lbQmax').value})});p.textContent='Predicted: '+JSON.stringify(d,null,1)}
+async function quantObserve(){const p=$('lbQuantOut');p.style.display='block';const d=await api('/api/lab/quant/observe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prediction_id:$('lbQid').value,actual:+$('lbQa').value})});p.textContent=JSON.stringify(d,null,1)}
+async function quantCalib(){const p=$('lbQuantOut');p.style.display='block';const d=await api('/api/lab/quant/calibration');p.textContent=JSON.stringify(d,null,1)}
 
 function memItem(m,showScore){const s=m._score?`<span class="score">${m._score}</span>`:'';const imp=m.importance?`imp=${m.importance}`:'';
 return `<div class="item"><div class="meta"><span class="tag">${m.type}</span>${s}<span>${(m.id||'').substring(0,8)}</span><span>${m.created_at?(m.created_at+'').substring(0,16):''}</span></span><span class="muted">${imp}</span></div><div>${esc((m.content||'').substring(0,250))}</div></div>`;}

@@ -520,6 +520,113 @@ def api_bilan():
     return jsonify({"report": report})
 
 
+# ══ LAB: verify_auto / hypotheses / env / perception / JEV / quant ══
+
+@app.route("/api/lab/verify-auto", methods=["POST"])
+def api_lab_verify_auto():
+    d = request.json or {}
+    checks = d.get("checks", [])
+    claim = router.verification.claim(d.get("claim", ""), source="ui")
+    result = router.auto_verify.verify_auto(claim.id, checks, auto_resolve=True)
+    result["claim_id"] = claim.id
+    return jsonify(result)
+
+
+@app.route("/api/lab/hyp/propose", methods=["POST"])
+def api_lab_hyp_propose():
+    d = request.json or {}
+    m = router.experiment.propose_hypothesis(d.get("statement", ""),
+                                             env_id=d.get("env_id"),
+                                             rationale=d.get("rationale"))
+    return jsonify(m)
+
+
+@app.route("/api/lab/hyp/run", methods=["POST"])
+def api_lab_hyp_run():
+    d = request.json or {}
+    result = router.experiment.run_experiment(
+        d["hyp_id"], d.get("name", "exp"), d.get("result", ""),
+        success=bool(d.get("success", False)), env_id=d.get("env_id"))
+    return jsonify(result)
+
+
+@app.route("/api/lab/hyp/conclude", methods=["POST"])
+def api_lab_hyp_conclude():
+    d = request.json or {}
+    return jsonify(router.experiment.conclude(d["hyp_id"], d.get("verdict", "refuted")))
+
+
+@app.route("/api/lab/hyp/guard")
+def api_lab_hyp_guard():
+    return jsonify(router.experiment.repeat_guard(request.args.get("q", "")))
+
+
+@app.route("/api/lab/hyp/pending")
+def api_lab_hyp_pending():
+    return jsonify({"hypotheses": router.experiment.pending_hypotheses()})
+
+
+@app.route("/api/lab/env/capture", methods=["POST"])
+def api_lab_env_capture():
+    d = request.json or {}
+    return jsonify(router.environment.capture(d.get("extra", {})))
+
+
+@app.route("/api/lab/perceive", methods=["POST"])
+def api_lab_perceive():
+    d = request.json or {}
+    # sandbox roots = projet operator (config-driven enforced by PerceptionEngine)
+    roots = CONFIG.get("perception_roots") or []
+    if roots:
+        router.perception._allowed_roots = [__import__("pathlib").Path(r).resolve() for r in roots if __import__("os").path.exists(r)]
+    return jsonify(router.perception.perceive(d.get("path", ""), note=d.get("note")))
+
+
+@app.route("/api/lab/jev/route", methods=["POST"])
+def api_lab_jev_route():
+    d = request.json or {}
+    return jsonify(router.jev.route(d.get("query", ""), log=False))
+
+
+@app.route("/api/lab/jev/gate", methods=["POST"])
+def api_lab_jev_gate():
+    d = request.json or {}
+    return jsonify(router.jev.gate(d.get("action", ""), log=False))
+
+
+@app.route("/api/lab/jev/score", methods=["POST"])
+def api_lab_jev_score():
+    d = request.json or {}
+    grid = d.get("grid", {})
+    return jsonify(router.jev.score(dict(grid), subject=d.get("subject")))
+
+
+@app.route("/api/lab/jev/decide", methods=["POST"])
+def api_lab_jev_decide():
+    d = request.json or {}
+    return jsonify(router.jev.decide(d.get("context", ""), d.get("options", [])))
+
+
+@app.route("/api/lab/quant/predict", methods=["POST"])
+def api_lab_quant_predict():
+    d = request.json or {}
+    m = router.world.predict_quant(d["key"], float(d["range_min"]), float(d["range_max"]),
+                                   env_id=d.get("env_id"))
+    return jsonify({"id": m.id, "status": "pending"})
+
+
+@app.route("/api/lab/quant/observe", methods=["POST"])
+def api_lab_quant_observe():
+    d = request.json or {}
+    return jsonify(router.world.observe_quant(d["prediction_id"], float(d["actual"]),
+                                              env_id=d.get("env_id")))
+
+
+@app.route("/api/lab/quant/calibration")
+def api_lab_quant_calibration():
+    return jsonify(router.world.calibration())
+
+
 # ══ CONFIG + EMBEDDINGS + CONSOLIDATION ════════════════════════
 
 @app.route("/api/config")
