@@ -403,6 +403,13 @@ from jarvix_memory.core.autopush import export_project
 exp = export_project(router.db, ".", project_id="unit-test-scope")
 ok("autopush_export", _os.path.exists(exp["export_path"]) and exp["memories"] >= 0, f"got {exp.get('memories')}")
 
+# 21. LIVE CONTEXT (2 tools)
+print("\n[21/21] LIVE")
+b = router.live.bundle("OnePlus", max_tokens=800)
+ok("live_context", b["status"] == "OK_RELIABLE" and len(b["items"]) >= 1)
+router.live.stop_watch()
+ok("live_watch", isinstance(router.live.start_watch(), bool))
+
 # ══════════════════════════════════════════════════════════════
 # SUMMARY
 # ══════════════════════════════════════════════════════════════
@@ -411,12 +418,5 @@ print(f"  RESULT: {P} passed, {F} failed out of {P+F}")
 print("=" * 60)
 if F == 0:
     print("  ALL 89 TOOLS VERIFIED OK")
-
-# 21. LIVE CONTEXT (2 tools)
-print("\n[21/21] LIVE")
-b = router.live.bundle("OnePlus", max_tokens=800)
-ok("live_context", b["status"] == "OK_RELIABLE" and len(b["items"]) >= 1)
-assert router.live.stop_watch()
-ok("live_watch", isinstance(router.live.start_watch(), bool))
 else:
     print(f"  WARNING: {F} FAILURES")
