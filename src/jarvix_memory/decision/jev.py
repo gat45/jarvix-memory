@@ -130,10 +130,10 @@ class JEV:
 
     def __init__(self, db, provider: DecisionProvider = None, config_path=None):
         self.db = db
-        self.provider = provider or self._pick_provider(config_path)
+        self.provider = provider or self._pick_provider(self.db, config_path)
 
     @staticmethod
-    def _pick_provider(config_path=None) -> DecisionProvider:
+    def _pick_provider(db=None, config_path=None) -> DecisionProvider:
         import os
         from pathlib import Path as _Path
         cfg_path = config_path or _Path(__file__).resolve().parents[3] / "config.json"
@@ -142,35 +142,39 @@ class JEV:
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         except Exception:
             pass
-        mode = os.environ.get("JARVIX_JEV_PROVIDER") or cfg.get("jev_provider") or ""
+        mode = os.environ.get("JARVIX_JEV_PROVIDER") or cfg.get("jev_provider") \
+            or "logits"  # default: local logits (free, offline, unlimited)
+        # 1. LOGITS local (llama.cpp /v1/completion + logprobs — Simple-Jev/LitJev style)
+        if mode in ("logits", "auto"):
+            try:
+                from .jev_logits import JevLogitsProvider
+                jl = JevLogitsProvider(
+                    db, base_url=os.environ.get("JARVIX_JEV_LLAMA_URL")
+                    or cfg.get("jev_llama_url"))
+                if jl.available:
+                    return jl
+                logger.info("llama server absent — jev-logits skip")
+            except ImportError:
+                pass
+        # 2. LOCAL systemone-compatible server (LitJev:8000/LocalJev:8080/simple-jev)
+        local_base = os.environ.get("JARVIX_JEV_LOCAL_URL") or cfg.get("jev_local_url")
+        if mode in ("local", "auto") and local_base:
+            from .jev_remote import JevRemoteProvider
+            return JevRemoteProvider(api_key="local", base_url=local_base,
+                                     model=os.environ.get("JARVIX_JEV_LOCAL_MODEL")
+                                     or cfg.get("jev_local_model") or "local",
+                                     timeout=10.0)
+        # 3. REMOTE API (TypeSafe / jev-agent) — si cle + mode
         has_remote_key = bool(os.environ.get("JARVIX_JEV_API_KEY")
                               or os.environ.get("TYPESAFE_API_KEY")
                               or cfg.get("jev_api_key"))
-        # Chain: remote API (if key + mode remote) -> local systemone server -> rules
-        if mode == "remote" and has_remote_key or (has_remote_key and mode != "local"):
-            try:
-                from .jev_remote import JevRemoteProvider
-                rp = JevRemoteProvider(
-                    base_url=os.environ.get("JARVIX_JEV_BASE_URL") or cfg.get("jev_base_url"),
-                    model=os.environ.get("JARVIX_JEV_MODEL") or cfg.get("jev_model"),
-                    config_path=cfg_path)
-                if rp.available:
-                    return rp
-            except ImportError:
-                logger.warning("jev_remote module absent — RuleBasedProvider")
-        # LOCAL: a /v1/systemone-compatible server (LitJev:8000, LocalJev:8080,
-        # simple-jev:8000 /v1/classifier, open-jev) — no API key needed
-        local_base = os.environ.get("JARVIX_JEV_LOCAL_URL") or cfg.get("jev_local_url")
-        if mode == "local" or (local_base and mode not in ("remote", "rules")):
-            try:
-                from .jev_remote import JevRemoteProvider
-                return JevRemoteProvider(api_key="local",
-                                         base_url=local_base,
-                                         model=os.environ.get("JARVIX_JEV_LOCAL_MODEL")
-                                         or cfg.get("jev_local_model") or "local",
-                                         timeout=10.0)
-            except ImportError:
-                pass
+        if mode == "remote" and has_remote_key:
+            from .jev_remote import JevRemoteProvider
+            return JevRemoteProvider(
+                base_url=os.environ.get("JARVIX_JEV_BASE_URL") or cfg.get("jev_base_url"),
+                model=os.environ.get("JARVIX_JEV_MODEL") or cfg.get("jev_model"),
+                config_path=cfg_path)
+        # 4. RULES (offline deterministe, toujours dispo)
         return RuleBasedProvider()
 
     def log_decision(self, kind: str, subject: str, result: Dict):
