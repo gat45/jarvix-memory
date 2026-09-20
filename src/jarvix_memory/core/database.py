@@ -231,21 +231,36 @@ class Database:
                 results.append(r)
         return results[:limit]
 
-    def recall_cost_aware(self, query: str, limit: int = 10, budget_tokens: int = None) -> List[Dict]:
-        """P1.4 — hybrid search re-ranked by value/cost, with optional token budget."""
+    def recall_cost_aware(self, query: str, limit: int = 10, budget_tokens: int = None,
+                          min_value: float = 0.0005, abstain_below: float = 0.35) -> List[Dict]:
+        """P1.4 — hybrid ranked by value/cost. ABSTENTION policy: no LIKE match AND
+        top vector score < abstain_below => 'NO_RELIABLE_MEMORY' (no lucky guesses)."""
         from .cost import rerank
+        like_hits = self.search_fts(query, limit=limit * 3)  # only if it can produce,
         base = self.search_hybrid(query, limit=limit * 3)
         reranked = rerank(base, lambda m: (m.get("_score") or 0.5) if "_score" in m else 0.5)
+        if not like_hits and (not reranked or max((m.get("_score", 0) for m in reranked if "_score" in m), default=0.0) < abstain_below):
+            top_v = max((m.get("_score", 0) for m in reranked if "_score" in m), default=0.0)
+            return [{"abstain": True,
+                     "status": "NO_RELIABLE_MEMORY",
+                     "reason": f"aucun match lexical, meilleure sim vectorielle {round(top_v, 3)} < {abstain_below}",
+                     "query": query}]
+        out = [m for m in reranked if m["_value"] >= min_value]
+        if not out:
+            return [{"abstain": True,
+                     "status": "NO_RELIABLE_MEMORY",
+                     "reason": f"aucune memoire >= valeur seuil {min_value}",
+                     "query": query}]
         if budget_tokens is not None:
-            out, spent = [], 0
-            for m in reranked:
+            final, spent = [], 0
+            for m in out:
                 cost = m.get("_cost_tokens", 0)
                 if spent + cost > budget_tokens:
                     break
                 spent += cost
-                out.append(m)
-            return out
-        return reranked[:limit]
+                final.append(m)
+            return final
+        return out[:limit]
 
     def record_usage(self, memory_id: str, used: bool = True) -> bool:
         """Reinforcement: increment utility when a memory is actually used."""
