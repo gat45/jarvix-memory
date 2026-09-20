@@ -16,7 +16,7 @@ def j(obj):
     return json.dumps(obj, default=str, ensure_ascii=False)
 
 print("=" * 60)
-print("  TEST COMPLET — 78 TOOLS MCP")
+print("  TEST COMPLET — 86 TOOLS MCP")
 print("=" * 60)
 
 # ══════════════════════════════════════════════════════════════
@@ -374,6 +374,30 @@ mon = router.proactive.monitor("NPU test", experiment_tracker=router.experiment,
                                recovery_layer=router.recovery)
 ok("proactive_monitor", "inject" in mon and "refuted_path_warning" in mon and "silent" in mon)
 
+# 19. P2: PERCEPTION / QUANT WORLD / JEV (8 tools)
+print("\n[19/19] P2: PERCEPTION / QUANT / JEV")
+import tempfile as _tf, os as _os
+_logp = _os.path.join(_tf.gettempdir(), "ui_test_signals.log")
+open(_logp, "w").write("start\nSIGSEGV 0xc0 in htp\nOOM failed\n12.3 tok/s\n")
+per = router.perception.perceive(_logp, note="ui-test")
+ok("perceive_file", per.get("signals", 0) >= 3 and (per.get("top_severity") or {}).get("tag") == "signal", f"got {per}")
+
+pq = router.world.predict_quant("bench_tok_s", 30, 40, env_id="env_ui")
+oq = router.world.observe_quant(pq.id, 35.0, env_id="env_ui")
+ok("world_predict_quant", oq.get("in_range") is True, f"got {oq}")
+ok("world_observe_quant", oq.get("rel_error") is not None and oq["rel_error"] <= 0.5, f"rel_err={oq.get('rel_error')}")
+cal = router.world.calibration()
+ok("world_calibration", "per_key" in cal and "global_mape" in cal)
+
+jr = router.jev.route("how to compile build", log=False)
+ok("jev_route", jr["choice"] in ("procedural", "semantic"), f"got {jr['choice']}")
+jg = router.jev.gate("delete gguf model", log=False)
+ok("jev_gate", jg["decision"] in ("BLOCK", "REVIEW"), f"got {jg['decision']}")
+js = router.jev.score({"evidence_quality": 0.9}, subject="ui-test")
+ok("jev_score", "score" in js and "label" in js)
+jd = router.jev.decide("choose a path", ["opt A", "opt B"])
+ok("jev_decide", jd["choice"] in ("opt A", "opt B"), f"got {jd['choice']}")
+
 # ══════════════════════════════════════════════════════════════
 # SUMMARY
 # ══════════════════════════════════════════════════════════════
@@ -381,6 +405,6 @@ print("\n" + "=" * 60)
 print(f"  RESULT: {P} passed, {F} failed out of {P+F}")
 print("=" * 60)
 if F == 0:
-    print("  ALL 78 TOOLS VERIFIED OK")
+    print("  ALL 86 TOOLS VERIFIED OK")
 else:
     print(f"  WARNING: {F} FAILURES")

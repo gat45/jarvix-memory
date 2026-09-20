@@ -136,3 +136,97 @@ class WorldModel:
             return abs(exp_num - act_num) < 0.01
         except (ValueError, TypeError):
             return False
+
+    # ── P2.9 — quantitative predictions + calibration ────
+
+    def predict_quant(self, key: str, range_min: float, range_max: float,
+                      env_id: str = None, hypothesis: str = None) -> Memory:
+        """Predict a numeric range for a measurable quantity (tok/s, RAM, temp...)."""
+        meta = {
+            "quant_key": key,
+            "expected_min": range_min,
+            "expected_max": range_max,
+            "env_id": env_id,
+            "hypothesis": hypothesis,
+            "kind": "quant",
+            "status": "pending",
+            "predictions": [],
+        }
+        memory = Memory(
+            type=MemoryType.WORLD,
+            content=f"Predicting [{key}] in [{range_min}..{range_max}] ENV {env_id or 'n/a'}",
+            metadata=meta,
+        )
+        self.db.insert_memory(memory)
+        return memory
+
+    def observe_quant(self, prediction_id: str, actual: float,
+                      env_id: str = None) -> Dict[str, Any]:
+        mem = self.db.get_memory(prediction_id)
+        if not mem:
+            return {"error": "prediction not found"}
+        meta = json.loads(mem.get("metadata", "{}"))
+        lo, hi = meta.get("expected_min"), meta.get("expected_max")
+        if lo is None or hi is None:
+            return {"error": "not a quantitative prediction"}
+        midpoint = (lo + hi) / 2.0
+        abs_err = abs(actual - midpoint)
+        rel_err = abs_err / abs(midpoint) if midpoint != 0 else abs_error_safe(abs_err)
+        meta["predictions"].append({
+            "actual": actual, "env_id": env_id,
+            "abs_error": round(abs_err, 4),
+            "rel_error": round(rel_err, 4),
+            "observed_at": datetime.utcnow().isoformat(),
+        })
+        meta["status"] = "observed"
+        meta["rel_error"] = round(rel_err, 4)
+        meta["in_range"] = (lo <= actual <= hi)
+        # Calibration feedback: shrink the belief's confidence toward observed reality
+        self._calibrate(meta["quant_key"], actual)
+        self.db.update_memory(prediction_id, metadata=json.dumps(meta))
+        return {"prediction_id": prediction_id, "actual": actual,
+                "expected_range": [lo, hi], "in_range": meta["in_range"],
+                "rel_error": meta["rel_error"]}
+
+    def _calibrate(self, key: str, actual: float, alpha: float = 0.3):
+        """Update the belief toward the observed value (exponential smoothing)."""
+        state = self.get_state()
+        beliefs = state.get("beliefs", {})
+        if key in beliefs:
+            old = beliefs[key].get("value")
+            if isinstance(old, (int, float)):
+                new_val = old * (1 - alpha) + actual * alpha
+                self.update_state(key, new_val,
+                                  confidence=beliefs[key].get("confidence", 0.8))
+
+    def calibration(self, limit: int = 100) -> Dict[str, Any]:
+        """Prediction quality per quant key: MAPE (mean abs rel error) + hit rate."""
+        rows = self.db.search_by_type("world", limit=limit * 2)
+        per_key = {}
+        for r in rows:
+            meta = json.loads(r.get("metadata", "{}"))
+            if meta.get("kind") != "quant" or meta.get("status") != "observed":
+                continue
+            k = meta.get("quant_key")
+            hits = 0
+            for p in meta.get("predictions", []):
+                if p.get("rel_error") is None:
+                    continue
+                lo, hi = meta["expected_min"], meta["expected_max"]
+                hit = lo <= p["actual"] <= hi
+                entry = per_key.setdefault(k, {"n": 0, "hits": 0, "errors": []})
+                entry["n"] += 1
+                entry["hits"] += 1 if hit else 0
+                entry["errors"].append(p["rel_error"])
+        out = {}
+        for k, v in per_key.items():
+            out[k] = {"predictions": v["n"],
+                      "hit_rate": round(v["hits"] / v["n"], 3),
+                      "mape": round(sum(v["errors"]) / v["n"], 4)}
+        overall = [x for k in out for x in [out[k]["mape"]]]
+        return {"per_key": out,
+                "global_mape": round(sum(overall) / len(overall), 4) if overall else None}
+
+
+def abs_error_safe(x):
+    return x

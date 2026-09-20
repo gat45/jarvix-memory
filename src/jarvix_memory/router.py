@@ -16,6 +16,8 @@ from .consolidation.service import ConsolidationService
 from .verification.auto_verify import AutoVerifier
 from .core.environment import EnvironmentStore
 from .experiment.tracker import ExperimentTracker
+from .multimodal.perception import PerceptionEngine
+from .decision.jev import JEV
 
 
 class MemoryRouter:
@@ -32,6 +34,8 @@ class MemoryRouter:
         self.auto_verify = AutoVerifier(self.verification)
         self.environment = EnvironmentStore(self.db)
         self.experiment = ExperimentTracker(self.db)
+        self.perception = PerceptionEngine(self.db)
+        self.jev = JEV(self.db)
         self.action = ActionMemory(self.db)
         self.strategy = StrategyMemory(self.db)
         self.learning = LearningLayer(self.db)

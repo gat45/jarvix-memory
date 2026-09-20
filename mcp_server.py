@@ -732,5 +732,66 @@ def proactive_monitor(context: str) -> str:
     return json.dumps(result, default=str, ensure_ascii=False)
 
 
+# ── P2: Perception / Predictive world / JEV ────────────────────
+
+@mcp.tool()
+@safe_tool
+def perceive_file(path: str, note: str = None) -> str:
+    """P2.8 — artifact -> observation + evidence (sha256, signaux log, OCR si dispo)."""
+    return json.dumps(router.perception.perceive(path, note=note), ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def world_predict_quant(key: str, range_min: float, range_max: float, env_id: str = None) -> str:
+    """P2.9 — predict a numeric range (tok/s, RAM, temp). Observe later with world_observe_quant."""
+    m = router.world.predict_quant(key, range_min, range_max, env_id=env_id)
+    return json.dumps({"id": m.id, "status": "pending"})
+
+
+@mcp.tool()
+@safe_tool
+def world_observe_quant(prediction_id: str, actual: float, env_id: str = None) -> str:
+    """P2.9 — observe the real measurement; updates calibration of the belief (exponential smoothing)."""
+    return json.dumps(router.world.observe_quant(prediction_id, actual, env_id=env_id))
+
+
+@mcp.tool()
+@safe_tool
+def world_calibration(limit: int = 100) -> str:
+    """P2.9 — prediction quality per key: hit_rate + MAPE (mean absolute percentage error)."""
+    return json.dumps(router.world.calibration(limit=limit))
+
+
+@mcp.tool()
+@safe_tool
+def jev_route(query: str) -> str:
+    """P2.10 — JEV Noul: which memory layer(s) matter for this query (typed distribution)."""
+    return json.dumps(router.jev.route(query))
+
+
+@mcp.tool()
+@safe_tool
+def jev_gate(action: str, destructive_threshold: float = 0.85) -> str:
+    """P2.10 — JEV gate: ALLOW/REVIEW/BLOCK for a proposed action (destructive check)."""
+    return json.dumps(router.jev.gate(action, destructive_threshold))
+
+
+@mcp.tool()
+@safe_tool
+def jev_score(subject: str, grid: str) -> str:
+    """P2.10 — JEV Score: grid = JSON {criterion: 0..1, "_weights": {...optional}}."""
+    g = json.loads(grid) if grid else {}
+    return json.dumps(router.jev.score(g, subject=subject))
+
+
+@mcp.tool()
+@safe_tool
+def jev_decide(context: str, options: str) -> str:
+    """P2.10 — JEV Choice: options = JSON array of strings. Returns winner + distribution."""
+    opts = json.loads(options) if options else []
+    return json.dumps(router.jev.decide(context, opts))
+
+
 if __name__ == "__main__":
     mcp.run()
