@@ -794,5 +794,32 @@ def autopush(project_id: str = None, message: str = None, confirm: bool = False)
     return json.dumps(result, ensure_ascii=False)
 
 
+@mcp.tool()
+@safe_tool
+def ingest_directory(path: str, note: str = None) -> str:
+    """Scan a directory (bounded 5000 files, depth 4) and store a semantic inventory in memory (files, types, sizes, subdirs). Push influence via config scan_dirs."""
+    from jarvix_memory.core.ingest import ingest_directory
+    result = ingest_directory(router.db, path, note=note)
+    return json.dumps(result, default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def scan_directory_info(path: str, max_files: int = 5000) -> str:
+    """Dry inventory of a directory (no memory written): file counts per type, sizes, subdirs."""
+    from jarvix_memory.core.ingest import scan_directory
+    return json.dumps(scan_directory(path, max_files=max_files), default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def jev_status() -> str:
+    """JEV remote provider health + monthly decision quota (jev-agent/TypeSafe)."""
+    provider = router.jev.provider
+    if hasattr(provider, "status"):
+        return json.dumps(provider.status())
+    return json.dumps({"provider": "rules", "available": True})
+
+
 if __name__ == "__main__":
     mcp.run()
