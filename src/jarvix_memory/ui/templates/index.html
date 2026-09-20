@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIX Memory</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0a0f;color:#e0e0e0}
+.header{background:linear-gradient(135deg,#1a1a2e,#16213e);padding:20px 30px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:1.5rem;color:#00d4ff}
+.status{display:flex;gap:15px;font-size:.85rem}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+.on{background:#00ff88}.off{background:#ff4444}
+.container{max-width:1400px;margin:0 auto;padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.panel{background:#12121a;border:1px solid #2a2a3a;border-radius:10px;padding:20px}
+.panel h2{color:#00d4ff;font-size:1.1rem;margin-bottom:15px;border-bottom:1px solid #2a2a3a;padding-bottom:8px}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat-card{background:#1a1a2e;border-radius:8px;padding:12px;text-align:center}
+.stat-card .value{font-size:1.8rem;color:#00d4ff;font-weight:bold}
+.stat-card .label{font-size:.75rem;color:#888;margin-top:4px}
+.full-width{grid-column:1/-1}
+textarea,input[type=text]{width:100%;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:10px;font-size:.9rem;resize:vertical}
+textarea:focus,input:focus{outline:none;border-color:#00d4ff}
+button{background:#00d4ff;color:#000;border:none;border-radius:6px;padding:8px 20px;cursor:pointer;font-weight:600;font-size:.85rem}
+button:hover{background:#00b8d4}
+button.secondary{background:#333;color:#e0e0e0}
+.search-row{display:flex;gap:10px;margin-bottom:15px}
+.search-row input{flex:1}
+.search-row select{background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#e0e0e0;padding:8px}
+.results{max-height:400px;overflow-y:auto}
+.result-item{background:#1a1a2e;border-radius:6px;padding:12px;margin-bottom:8px;border-left:3px solid #00d4ff}
+.result-item .meta{font-size:.75rem;color:#888;margin-bottom:4px}
+.result-item .content{font-size:.9rem;line-height:1.4}
+.score{color:#00ff88;font-weight:bold}
+.chat-box{display:flex;flex-direction:column;height:300px}
+.chat-messages{flex:1;overflow-y:auto;padding:10px;background:#1a1a2e;border-radius:6px;margin-bottom:10px}
+.chat-msg{margin-bottom:8px;padding:8px 12px;border-radius:8px;max-width:85%}
+.chat-msg.user{background:#16213e;margin-left:auto;text-align:right}
+.chat-msg.assistant{background:#1a3a1a}
+.chat-input{display:flex;gap:10px}
+.chat-input input{flex:1}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>JARVIX Memory</h1>
+  <div class="status">
+    <span><span class="dot {{ 'on' if stats.total_memories > 0 else 'off' }}"></span>{{ stats.total_memories }} souvenirs</span>
+    <span><span class="dot {{ 'on' if vec_stats.embeddings > 0 else 'off' }}"></span>{{ vec_stats.embeddings }} embeddings</span>
+    <span><span class="dot {{ 'on' if llm_health.available else 'off' }}"></span>LLM {{ 'OK' if llm_health.available else 'OFF' }}</span>
+    <span><span class="dot on"></span>DB v{{ db_version }}</span>
+  </div>
+</div>
+<div class="container">
+  <div class="panel full-width">
+    <h2>Statistiques</h2>
+    <div class="stats-grid">
+      {% for name, count in stats.items() if name != 'total_memories' and count > 0 %}
+      <div class="stat-card"><div class="value">{{ count }}</div><div class="label">{{ name }}</div></div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Recherche</h2>
+    <div class="search-row">
+      <input type="text" id="searchQuery" placeholder="Rechercher..." onkeydown="if(event.key==='Enter')doSearch()">
+      <select id="searchMode"><option value="hybrid">Hybride</option><option value="vector">Vectoriel</option><option value="text">Texte</option></select>
+      <button onclick="doSearch()">Chercher</button>
+    </div>
+    <div id="searchResults" class="results"></div>
+  </div>
+  <div class="panel">
+    <h2>Raisonnement LLM</h2>
+    <div class="chat-box">
+      <div id="chatMessages" class="chat-messages">
+        <div class="chat-msg assistant">Bonjour ! Je suis JARVIX. Pose-moi une question.</div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chatInput" placeholder="Question..." onkeydown="if(event.key==='Enter')doChat()">
+        <button onclick="doChat()">Envoyer</button>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Ajouter une memoire</h2>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <select id="addType"><option value="semantic">Semantique</option><option value="episodic">Episodique</option><option value="procedural">Procedurale</option><option value="decision">Decision</option><option value="graph">Graphe</option></select>
+      <textarea id="addContent" rows="3" placeholder="Contenu de la memoire..."></textarea>
+      <button onclick="addMemory()">Ajouter</button>
+      <div id="addResult"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Actions</h2>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="secondary" onclick="rebuildEmbeddings()">Reconstruire les embeddings</button>
+      <button class="secondary" onclick="window.open('/api/health','_blank')">Voir le JSON brut /api/health</button>
+      <div id="actionResult"></div>
+    </div>
+  </div>
+</div>
+<script>
+async function doSearch(){
+  const q=document.getElementById('searchQuery').value;
+  const m=document.getElementById('searchMode').value;
+  const el=document.getElementById('searchResults');
+  el.innerHTML='<div class="loading">Recherche en cours...</div>';
+  try{
+    const r=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,mode:m,limit:10})});
+    const d=await r.json();
+    if(!d.results.length){el.innerHTML='<div style="color:#888">Aucun resultat</div>';return}
+    el.innerHTML=d.results.map(m=>'<div class="result-item"><div class="meta"><span class="tag">'+m.type+'</span> '+(m._score?'<span class="score">score='+m._score+'</span>':'')+' '+m.id.substring(0,8)+'...</div><div class="content">'+(m.content||'').substring(0,200)+'</div></div>').join('');
+  }catch(e){el.innerHTML='<div style="color:#ff4444">Erreur: '+e+'</div>'}
+}
+async function doChat(){
+  const input=document.getElementById('chatInput');
+  const q=input.value.trim();if(!q)return;
+  input.value='';
+  const box=document.getElementById('chatMessages');
+  box.innerHTML+='<div class="chat-msg user">'+q+'</div>';
+  box.innerHTML+='<div class="chat-msg assistant loading" id="chatLoading">Recherche + raisonnement...</div>';
+  box.scrollTop=box.scrollHeight;
+  try{
+    const r=await fetch('/api/reason',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})});
+    const d=await r.json();
+    document.getElementById('chatLoading').remove();
+    box.innerHTML+='<div class="chat-msg assistant">'+d.response.replace(/\n/g,'<br>')+'</div>';
+    box.innerHTML+='<div class="chat-msg assistant" style="font-size:.75rem;color:#888">'+d.memories_used+' memories utilisees</div>';
+  }catch(e){document.getElementById('chatLoading').innerHTML='Erreur: '+e}
+  box.scrollTop=box.scrollHeight;
+}
+async function addMemory(){
+  const type=document.getElementById('addType').value;
+  const content=document.getElementById('addContent').value;
+  const el=document.getElementById('addResult');
+  if(!content){el.innerHTML='<span style="color:#ff4444">Contenu requis</span>';return}
+  try{
+    const r=await fetch('/api/memories',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,type})});
+    const d=await r.json();
+    el.innerHTML='<span style="color:#00ff88">Cree: '+d.id.substring(0,8)+'...</span>';
+    document.getElementById('addContent').value='';
+  }catch(e){el.innerHTML='<span style="color:#ff4444">Erreur: '+e+'</span>'}
+}
+async function rebuildEmbeddings(){
+  const el=document.getElementById('actionResult');
+  el.innerHTML='<span class="loading">Reconstruction...</span>';
+  try{
+    const r=await fetch('/api/rebuild-embeddings',{method:'POST'});
+    const d=await r.json();
+    el.innerHTML='<span style="color:#00ff88">'+d.embedded+' embeddings reconstruits</span>';
+  }catch(e){el.innerHTML='<span style="color:#ff4444">Erreur: '+e+'</span>'}
+}
+</script>
+</body>
+</html>
