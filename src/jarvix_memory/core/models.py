@@ -31,6 +31,7 @@ class MemoryType(str, Enum):
     RECOVERY = "recovery"
     PROACTIVE = "proactive"
     MULTIMODAL = "multimodal"
+    ENVIRONMENT = "environment"
 
 
 class MemoryCost(BaseModel):

@@ -203,4 +203,4 @@ class TestConsolidation:
         router.episodic.add_memory("e1")
         router.semantic.add_fact("s1")
         stats = router.consolidation.stats()
-        assert ("episodic", "provisional") in stats
+        assert "episodic/provisional" in stats

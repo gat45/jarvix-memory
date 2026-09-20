@@ -611,5 +611,84 @@ def embeddings_stats() -> str:
     return json.dumps(v.stats())
 
 
+# ── P0: Auto-Verification / Environment / Experiment ───────────
+
+@mcp.tool()
+@safe_tool
+def verify_auto(claim_content: str, checks: str, permanent: bool = False) -> str:
+    """Create claim and run automatic checks. checks = JSON array of
+    {"type":"file_exists"|"file_contains"|"command"|"git_diff"|"measurement", "description":..., ...params}.
+    Types: file_exists {path} ; file_contains {path,needle} ; command {cmd,expect_rc,expect_stdout} ;
+    git_diff {repo,contains,since_ref} ; measurement {actual,op,expected} (op: gt/gte/lt/lte/eq/ne)."""
+    claim = router.verification.claim(claim_content, source="auto_verify")
+    checks_list = json.loads(checks) if checks else []
+    result = router.auto_verify.verify_auto(claim.id, checks_list, auto_resolve=True)
+    result["claim_id"] = claim.id
+    return json.dumps(result, default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def env_capture(extra_json: str = "{}") -> str:
+    """Capture an environment snapshot (OS/python/git/device). Returns env_id to reference in hypotheses/experiments."""
+    extra = json.loads(extra_json) if extra_json else {}
+    result = router.environment.capture(extra)
+    return json.dumps(result, default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def env_diff(env_a: str, env_b: str) -> str:
+    """Compare two environment snapshots — changed keys mean results are no longer comparable."""
+    return json.dumps(router.environment.diff(env_a, env_b), default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def env_get(env_id: str) -> str:
+    """Get a stored environment snapshot by env_id."""
+    result = router.environment.get(env_id)
+    return json.dumps(result or {"error": "not found"}, default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def hyp_propose(statement: str, env_id: str = None, rationale: str = None) -> str:
+    """Propose a testable hypothesis. Returns hypothesis id for experiments."""
+    result = router.experiment.propose_hypothesis(statement, env_id=env_id, rationale=rationale)
+    return json.dumps(result, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def hyp_repeat_guard(statement: str) -> str:
+    """Check if an experiment path was already REFUTED (do_not_repeat). Call BEFORE re-testing anything."""
+    return json.dumps(router.experiment.repeat_guard(statement), default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def hyp_run(hyp_id: str, name: str, result: str, success: bool, env_id: str = None, measurements: str = "{}") -> str:
+    """Record an experiment run against a hypothesis."""
+    meas = json.loads(measurements) if measurements else {}
+    out = router.experiment.run_experiment(hyp_id, name, result, success, env_id=env_id, measurements=meas)
+    return json.dumps(out, default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def hyp_conclude(hyp_id: str, verdict: str) -> str:
+    """Conclude a hypothesis: confirmed | refuted | inconclusive | superseded. refuted sets do_not_repeat=true."""
+    out = router.experiment.conclude(hyp_id, verdict)
+    return json.dumps(out, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def hyp_pending() -> str:
+    """List hypotheses still to be tested (PROPOSED/TESTING)."""
+    return json.dumps(router.experiment.pending_hypotheses(), default=str, ensure_ascii=False)
+
+
 if __name__ == "__main__":
     mcp.run()

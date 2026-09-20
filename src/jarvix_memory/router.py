@@ -13,6 +13,9 @@ from .proactive.layer import ProactiveMemory
 from .multimodal.engine import MultimodalEngine
 from .world.model import WorldModel
 from .consolidation.service import ConsolidationService
+from .verification.auto_verify import AutoVerifier
+from .core.environment import EnvironmentStore
+from .experiment.tracker import ExperimentTracker
 
 
 class MemoryRouter:
@@ -26,6 +29,9 @@ class MemoryRouter:
         self.graph = GraphMemory(self.db)
 
         self.verification = VerificationEngine(self.db)
+        self.auto_verify = AutoVerifier(self.verification)
+        self.environment = EnvironmentStore(self.db)
+        self.experiment = ExperimentTracker(self.db)
         self.action = ActionMemory(self.db)
         self.strategy = StrategyMemory(self.db)
         self.learning = LearningLayer(self.db)

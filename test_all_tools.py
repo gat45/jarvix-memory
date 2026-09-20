@@ -16,7 +16,7 @@ def j(obj):
     return json.dumps(obj, default=str, ensure_ascii=False)
 
 print("=" * 60)
-print("  TEST COMPLET — 64 TOOLS MCP")
+print("  TEST COMPLET — 73 TOOLS MCP")
 print("=" * 60)
 
 # ══════════════════════════════════════════════════════════════
@@ -331,12 +331,43 @@ conns = llm.find_connections(m.id)
 ok("llm_connections", isinstance(conns, dict))
 
 # ══════════════════════════════════════════════════════════════
+# 17. P0: AUTO-VERIFY / ENVIRONMENT / EXPERIMENT (9 tools)
+# ══════════════════════════════════════════════════════════════
+print("\n[17/17] P0: AUTO-VERIFY / ENV / EXPERIMENT")
+
+av = router.auto_verify.verify_auto(
+    router.verification.claim("pyproject exists").id,
+    [{"type": "file_exists", "path": r"D:\oneplus\memoire\pyproject.toml"}])
+ok("verify_auto", av.get("verdict") == "verified", f"got {av.get('verdict')}")
+
+env = router.environment.capture({"bench_device": "ci-pc"})
+env2 = router.environment.capture({"bench_device": "ci-pc"})
+ok("env_capture_dedup", env["env_id"] == env2["env_id"])
+ok("env_get", router.environment.get(env["env_id"]) is not None)
+
+env_b = router.environment.capture({"bench_device": "ci-phone"})
+diff = router.environment.diff(env["env_id"], env_b["env_id"])
+ok("env_diff", diff["changed_keys"] == {"bench_device": ("ci-pc", "ci-phone")})
+hyp = router.experiment.propose_hypothesis("guard test: mmap causes reboot", env_id=env["env_id"])
+ok("hyp_propose", "id" in hyp)
+router.experiment.run_experiment(hyp["id"], "t1", "no effect", success=False, env_id=env["env_id"])
+router.experiment.run_experiment(hyp["id"], "t2", "bad", success=False, env_id=env["env_id"])
+concl = router.experiment.conclude(hyp["id"], "refuted")
+ok("hyp_conclude_refuted", concl["verdict"] == "refuted", f"got {concl['verdict']}")
+ok("hyp_do_not_repeat", concl["do_not_repeat"] is True)
+guard = router.experiment.repeat_guard("guard test: mmap causes reboot")
+ok("hyp_repeat_guard", guard["blocked"] is True and len(guard["refuted_paths"]) >= 1)
+
+pend = router.experiment.pending_hypotheses()
+ok("hyp_pending", isinstance(pend, list))
+
+# ══════════════════════════════════════════════════════════════
 # SUMMARY
 # ══════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)
 print(f"  RESULT: {P} passed, {F} failed out of {P+F}")
 print("=" * 60)
 if F == 0:
-    print("  ALL 64 TOOLS VERIFIED OK")
+    print("  ALL 73 TOOLS VERIFIED OK")
 else:
     print(f"  WARNING: {F} FAILURES")

@@ -99,4 +99,5 @@ class ConsolidationService:
         rows = conn.execute(
             "SELECT type, status, COUNT(*) as cnt FROM memories GROUP BY type, status"
         ).fetchall()
-        return {(r[0], r[1]): r[2] for r in rows}
+        # clés stringifiées : json.dumps (MCP) refuse les clés tuple
+        return {f"{r[0]}/{r[1]}": r[2] for r in rows}
