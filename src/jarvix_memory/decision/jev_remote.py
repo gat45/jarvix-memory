@@ -103,6 +103,7 @@ class JevRemoteProvider(DecisionProvider):
         try:
             a = self._request(state, {
                 "inject": {"type": "noul",
+                           "criteria": {"true": "injecter maintenant", "false": "ne pas injecter"},
                            "instructions": "Cette memoire est-elle pertinente a INJECTER dans ce contexte MAINTENANT ?"},
             }).get("inject", {})
             p = float(a.get("noul", 0.0))
@@ -114,10 +115,11 @@ class JevRemoteProvider(DecisionProvider):
                     "provider": "rules", "reason": str(e)}
 
     def verify(self, claim: str, evidence_stats: Dict) -> Dict:
-        state = {"claim": claim[:2000], "evidence": evidence_stats}
+        state = f"CLAIM: {claim[:1500]} | EVIDENCE: {json.dumps(evidence_stats)[:1500]}"
         try:
             a = self._request(state, {
                 "supports": {"type": "noul",
+                             "criteria": {"true": "les preuves soutiennent le claim", "false": "elles le contredisent ou ne le soutiennent pas"},
                              "instructions": "Les preuves presentees supportent-elles ce claim ?"},
             }).get("supports", {})
             s = float(a.get("noul", 0.0))
@@ -133,10 +135,12 @@ class JevRemoteProvider(DecisionProvider):
 
     def gate(self, action: str, destructive_threshold: float = 0.85) -> Dict:
         try:
-            a = self._request({"proposed_action": action[:2000]}, {
+            a = self._request(f"PROPOSED ACTION: {action[:3000]}", {
                 "destructive": {"type": "noul",
-                                "instructions": "Cette action est-elle DESTRUCTIVE ou irreversible (suppression, flash, format) ?"},
+                                "criteria": {"true": "action destructive/irreversible", "false": "action reversible ou sure"},
+                                "instructions": "Cette action est-elle destructive/irreversible (suppression, flash, format) ?"},
                 "allow": {"type": "noul",
+                          "criteria": {"true": "sure sans supervision", "false": "supervision recommandee"},
                           "instructions": "Cette action est-elle sure a executer sans supervision humaine ?"},
             })
             d = float(a.get("destructive", {}).get("noul", 0.0))
@@ -171,13 +175,21 @@ class JevRemoteProvider(DecisionProvider):
             "criteria": legend,
         } for k in criteria}
         try:
-            answers = self._request({"criteria": criteria}, questions)
-            total, per = 0.0, {}
+            crit_text = "; ".join(f"{k}={v}" for k, v in criteria.items())
+            answers = self._request(f"CRITERES A NOTER: {crit_text[:3000]}", questions)
+            total, per, divisor = 0.0, {}, []
             for k in criteria:
-                sv = answers.get(f"rate_{k}", {}).get("score")
-                per[k] = round(float(sv if sv is not None else criteria[k]), 3)
-                total += per[k]
-            s = total / (len(criteria) * 4.0)
+                a = answers.get(f"rate_{k}", {})
+                sv = a.get("score")
+                # jev score = prob-weighted mean of rubric indices, 0..n-1
+                legend = a.get("legend") or {}
+                max_idx = max((int(x) for x in legend.keys()), default=4) if legend else 4
+                norm = float(sv) / max_idx if (sv is not None and max_idx) else \
+                    float(criteria[k])  # caller-provided already 0..1
+                divisor.append(max_idx)
+                per[k] = round(norm, 3)
+                total += norm
+            s = total / len(criteria)
             label = ("high" if s >= 0.75 else "medium" if s >= 0.45 else "low")
             return {"score": round(s, 3), "label": label, "per_criterion": per,
                     "provider": "jev-remote"}
@@ -193,10 +205,10 @@ class JevRemoteProvider(DecisionProvider):
             return {"choice": None, "distribution": {}, "confidence": 0.0,
                     "provider": "jev-remote"}
         try:
-            a = self._request({"context": context[:4000]}, {
+            a = self._request(f"CONTEXTE: {context[:3000]}", {
                 "pick": {"type": "choice",
                          "instructions": "Quel est le meilleur choix pour le contexte donne ?",
-                         "criteria": {opt: None for opt in options}},
+                         "criteria": {opt: str(opt)[:200] for opt in options}},
             }).get("pick", {})
             return {"choice": a.get("choice", options[0]),
                     "distribution": a.get("probabilities", {}),

@@ -198,13 +198,9 @@ class JEV:
         return r
 
     def decide(self, context: str, options: List[str]) -> Dict:
-        """JEV Choice over explicit options — winner via score grid."""
-        scores = {}
-        for opt in options:
-            r = self.filter({"content": opt, "confidence": 0.8}, context)
-            scores[opt] = r["prob"]
-        if not scores:
-            return {"choice": None, "distribution": {}, "confidence": 0.0}
-        winner = max(scores, key=scores.get)
-        return {"choice": winner, "distribution": scores,
-                "confidence": round(scores[winner], 3)}
+        """JEV Choice over explicit options — delegated to provider (remote or rules)."""
+        r = self.provider.decide(context, options)
+        r = {"choice": r.get("choice"), "distribution": r.get("distribution", {}),
+             "confidence": r.get("confidence", 0.0), "provider": r.get("provider", "rules")}
+        self.log_decision("decide", context[:100], r)
+        return r
