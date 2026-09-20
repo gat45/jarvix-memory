@@ -124,11 +124,41 @@ class RuleBasedProvider(DecisionProvider):
 
 
 class JEV:
-    """Facade around a DecisionProvider — the jarvix decision brain."""
+    """Facade around a DecisionProvider — the jarvix decision brain.
+    Provider selection: config.json {"jev_provider": "remote"|"rules"} + env.
+    Falls back to RuleBasedProvider if remote is unavailable or fails."""
 
-    def __init__(self, db, provider: DecisionProvider = None):
+    def __init__(self, db, provider: DecisionProvider = None, config_path=None):
         self.db = db
-        self.provider = provider or RuleBasedProvider()
+        self.provider = provider or self._pick_provider(config_path)
+
+    @staticmethod
+    def _pick_provider(config_path=None) -> DecisionProvider:
+        import os
+        from pathlib import Path as _Path
+        cfg_path = config_path or _Path(__file__).resolve().parents[3] / "config.json"
+        cfg = {}
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        want_remote = (os.environ.get("JARVIX_JEV_PROVIDER") == "remote"
+                       or cfg.get("jev_provider") == "remote"
+                       or bool(os.environ.get("JARVIX_JEV_API_KEY"))
+                       or bool(os.environ.get("TYPESAFE_API_KEY")))
+        if want_remote:
+            try:
+                from .jev_remote import JevRemoteProvider
+                rp = JevRemoteProvider(
+                    base_url=os.environ.get("JARVIX_JEV_BASE_URL") or cfg.get("jev_base_url"),
+                    model=os.environ.get("JARVIX_JEV_MODEL") or cfg.get("jev_model"),
+                    config_path=cfg_path)
+                if rp.available:
+                    return rp
+                logger.warning("Jev remote sans cle API — RuleBasedProvider")
+            except ImportError:
+                logger.warning("jev_remote module absent — RuleBasedProvider")
+        return RuleBasedProvider()
 
     def log_decision(self, kind: str, subject: str, result: Dict):
         from ..core.models import Memory
