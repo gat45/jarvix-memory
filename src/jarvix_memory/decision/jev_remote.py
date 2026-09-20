@@ -39,36 +39,72 @@ class JevRemoteProvider(DecisionProvider):
             try:
                 cfg = json.loads(config_path.read_text(encoding="utf-8"))
                 self.api_key = cfg.get("jev_api_key")
+                if not base_url:
+                    base_url = cfg.get("jev_base_url")
+                if not model:
+                    model = cfg.get("jev_model")
             except Exception:
                 pass
-        self.base_url = base_url or DEFAULT_BASE_URL
-        self.model = model or DEFAULT_MODEL
+        self.base_url = base_url or os.environ.get("JARVIX_JEV_BASE_URL") or DEFAULT_BASE_URL
+        self.model = model or os.environ.get("JARVIX_JEV_MODEL") or DEFAULT_MODEL
         self.timeout = timeout
         self.last_error: Dict = {}
+        self.last_quota: Dict = {}
+
+    def status(self) -> Dict:
+        """Availability + last known quota (jev-agent extra). One tiny probe call."""
+        base = {"provider": "jev-remote", "base_url": self.base_url,
+                "model": self.model, "available": self.available}
+        if not self.available:
+            return base
+        try:
+            self._request("HEALTHCHECK", {
+                "ok": {"type": "noul", "criteria": {"true": "oui", "false": "non"},
+                        "instructions": "Le service repond-t-il ?"},
+            })
+            return {**base, "quota": self.last_quota, "ok": True}
+        except Exception as e:
+            return {**base, "ok": False, "reason": str(e)}
 
     @property
     def available(self) -> bool:
         return bool(self.api_key)
 
-    def _request(self, state, questions: Dict) -> Dict:
-        req = urllib.request.Request(
-            f"{self.base_url}/systemone",
-            data=json.dumps({
-                "model": self.model,
-                "state": state,
-                "questions": questions,
-            }).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            body = json.loads(resp.read())
-        self.last_error = {}
-        return body.get("answers", {})
+    def _request(self, state, questions: Dict, retries: int = 2) -> Dict:
+        """Single HTTP call. Official policy: 429/529 -> backoff with Retry-After."""
+        import time as _time
+        last_exc: Exception = RuntimeError("no attempt")
+        for attempt in range(retries + 1):
+            req = urllib.request.Request(
+                f"{self.base_url}/systemone",
+                data=json.dumps({
+                    "model": self.model,
+                    "state": state,
+                    "questions": questions,
+                }).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    body = json.loads(resp.read())
+                self.last_error = {}
+                self.last_quota = body.get("quota", {})
+                return body.get("answers", {})
+            except urllib.error.HTTPError as e:
+                last_exc = e
+                if e.code in (429, 529) and attempt < retries:
+                    raw = (e.headers.get("Retry-After") or "").strip()
+                    wait = float(raw) if raw.replace(".", "", 1).isdigit() else 0.5 * (2 ** attempt)
+                    logger.warning("jev HTTP %s — retry apres %.1fs", e.code, wait)
+                    _time.sleep(wait)
+                    continue
+                raise
+        raise last_exc
 
     # ── DecisionProvider contract ─────────────────────────────
 
@@ -115,7 +151,18 @@ class JevRemoteProvider(DecisionProvider):
                     "provider": "rules", "reason": str(e)}
 
     def verify(self, claim: str, evidence_stats: Dict) -> Dict:
-        state = f"CLAIM: {claim[:1500]} | EVIDENCE: {json.dumps(evidence_stats)[:1500]}"
+        # Rich state: plain-language breakdown so the model can actually judge
+        total = evidence_stats.get("total", 0)
+        ev_list = evidence_stats.get("evidence", [])
+        passed = sum(1 for e in ev_list if isinstance(e, dict) and e.get("passed"))
+        failed = sum(1 for e in ev_list
+                     if isinstance(e, dict) and e.get("passed") is False)
+        if not passed and not failed and total:
+            passed = int(evidence_stats.get("passed", 0))
+        types = sorted({e.get("type") for e in ev_list if isinstance(e, dict) and e.get("type")})
+        state = (f"CLAIM: {claim[:1200]}\n"
+                 f"PREUVES: {passed} passent, {failed} echouent ; "
+                 f"types={types if types else 'n/a'}")
         try:
             a = self._request(state, {
                 "supports": {"type": "noul",
