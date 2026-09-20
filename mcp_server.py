@@ -821,5 +821,25 @@ def jev_status() -> str:
     return json.dumps({"provider": "rules", "available": True})
 
 
+# ── Live context (real-time LLM feeding + watcher) ─────────────
+
+@mcp.tool()
+@safe_tool
+def live_context(query: str = "", max_tokens: int = 4000) -> str:
+    """One payload for the LLM: fresh inventories + facts + open hypotheses + active recoveries. THE thing to call before working the project."""
+    return json.dumps(router.live.bundle(query, max_tokens=max_tokens),
+                      default=str, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool
+def live_watch(action: str = "start") -> str:
+    """start/stop the realtime watcher: periodic re-ingest of config scan_dirs + autopush to private repo (default 30min, config live_interval_min)."""
+    if action == "stop":
+        return json.dumps({"stopped": router.live.stop_watch()})
+    return json.dumps({"started": router.live.start_watch(),
+                      "interval_min": router.live.interval_s() // 60})
+
+
 if __name__ == "__main__":
     mcp.run()

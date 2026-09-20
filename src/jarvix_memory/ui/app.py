@@ -661,7 +661,6 @@ def api_autopush():
     """Git autopilot: export + commit + push (data repo from config)."""
     from jarvix_memory.core.autopush import push_project, autolog_dir
     d = request.json or {}
-    from jarvix_memory.core.autopush import push_project, autolog_dir
     try:
         result = push_project(router.db, str(autolog_dir()),
                               project_id=d.get("project_id"),
@@ -670,6 +669,21 @@ def api_autopush():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/live")
+def api_live():
+    """Real-time bundle for the LLM (query optional)."""
+    return jsonify(router.live.bundle(request.args.get("query", "")))
+
+
+@app.route("/api/live/watch", methods=["POST"])
+def api_live_watch():
+    d = request.json or {}
+    if d.get("action", "start") == "stop":
+        return jsonify({"stopped": router.live.stop_watch()})
+    return jsonify({"started": router.live.start_watch(),
+                    "interval_min": router.live.interval_s() // 60})
 
 
 @app.route("/api/health")

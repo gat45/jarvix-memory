@@ -18,6 +18,7 @@ from .core.environment import EnvironmentStore
 from .experiment.tracker import ExperimentTracker
 from .multimodal.perception import PerceptionEngine
 from .decision.jev import JEV
+from .core.livectl import LiveContext
 
 
 class MemoryRouter:
@@ -36,6 +37,7 @@ class MemoryRouter:
         self.experiment = ExperimentTracker(self.db)
         self.perception = PerceptionEngine(self.db)
         self.jev = JEV(self.db)
+        self.live = LiveContext(self.db)
         self.action = ActionMemory(self.db)
         self.strategy = StrategyMemory(self.db)
         self.learning = LearningLayer(self.db)

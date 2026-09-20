@@ -16,7 +16,7 @@ def j(obj):
     return json.dumps(obj, default=str, ensure_ascii=False)
 
 print("=" * 60)
-print("  TEST COMPLET — 87 TOOLS MCP")
+print("  TEST COMPLET — 89 TOOLS MCP")
 print("=" * 60)
 
 # ══════════════════════════════════════════════════════════════
@@ -410,6 +410,13 @@ print("\n" + "=" * 60)
 print(f"  RESULT: {P} passed, {F} failed out of {P+F}")
 print("=" * 60)
 if F == 0:
-    print("  ALL 87 TOOLS VERIFIED OK")
+    print("  ALL 89 TOOLS VERIFIED OK")
+
+# 21. LIVE CONTEXT (2 tools)
+print("\n[21/21] LIVE")
+b = router.live.bundle("OnePlus", max_tokens=800)
+ok("live_context", b["status"] == "OK_RELIABLE" and len(b["items"]) >= 1)
+assert router.live.stop_watch()
+ok("live_watch", isinstance(router.live.start_watch(), bool))
 else:
     print(f"  WARNING: {F} FAILURES")
