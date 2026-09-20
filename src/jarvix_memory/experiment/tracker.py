@@ -58,7 +58,14 @@ class ExperimentTracker:
                      "env_id": env_id, "ran_at": exp_meta["ran_at"]})
         hyp_meta["h_status"] = "TESTING"
         self.db.update_memory(hyp_id, metadata=json.dumps(hyp_meta))
-        return {"experiment_id": exp["id"], "hypothesis_id": hyp_id, "attempts": len(exps)}
+        out = {"experiment_id": exp["id"], "hypothesis_id": hyp_id, "attempts": len(exps)}
+        # Blind-spot fix: auto-refute without waiting for an explicit conclude
+        fails = sum(1 for e in exps if not e.get("success"))
+        if fails >= REFUTED_TEST_LIMIT and hyp_meta.get("h_status") not in ("REFUTED", "CONFIRMED"):
+            concl = self.conclude(hyp_id, "refuted")
+            out["auto_refuted"] = True
+            out["do_not_repeat"] = concl["do_not_repeat"]
+        return out
 
     def conclude(self, hyp_id: str, verdict: str) -> Dict:
         """verdict: confirmed | refuted | inconclusive | superseded"""

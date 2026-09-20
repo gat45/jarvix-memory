@@ -13,13 +13,6 @@ class ConsolidationService:
     def __init__(self, db: Database):
         self.db = db
 
-    def run_sleep_cycle(self):
-        logger.info("Starting consolidation sleep cycle")
-        self.decay_importance()
-        self.merge_episodic_to_semantic()
-        self.archive_old_provisional()
-        logger.info("Consolidation complete")
-
     def decay_importance(self, decay_factor: float = 0.95, min_importance: float = 0.1):
         conn = self.db._connect()
         conn.execute("""
@@ -64,7 +57,7 @@ class ConsolidationService:
         try:
             rows = conn.execute(
                 "SELECT id FROM memories WHERE status = 'provisional' "
-                "AND created_at < datetime('now', ? || ' days')",
+                "AND datetime(created_at) < datetime('now', ? || ' days')",
                 (f'-{max_age_days}',)
             ).fetchall()
             for row in rows:
@@ -81,18 +74,39 @@ class ConsolidationService:
             raise
 
     def _fts_sync_status(self, conn: sqlite3.Connection, memory_id: str, new_status: str):
+        # FTS was replaced by LIKE search — status change needs no index sync
+        pass
+
+    def archive_stale_actions(self, max_age_hours: int = 72,
+                              max_utility: float = 0.2) -> int:
+        """Blur-spot fix: actions 'provisional' jamais approuvees/executed vieillissent
+        et se font ARCHIVER (sinon la pile d'actions devient un junk-heap)."""
+        conn = self.db._connect()
+        conn.execute("SAVEPOINT sp_act")
         try:
-            conn.execute("DELETE FROM memories_fts WHERE id = ?", (memory_id,))
-            row = conn.execute(
-                "SELECT content, type FROM memories WHERE id = ?", (memory_id,)
-            ).fetchone()
-            if row:
-                conn.execute(
-                    "INSERT INTO memories_fts(id, content, type, status) VALUES (?, ?, ?, ?)",
-                    (memory_id, row[0], row[1], new_status),
-                )
-        except Exception as e:
-            logger.warning("FTS status sync failed for %s: %s", memory_id, e)
+            rows = conn.execute(
+                "SELECT id FROM memories WHERE type = 'action' AND status = 'provisional' "
+                "AND datetime(created_at) < datetime('now', '-' || ? || ' hours') "
+                "AND utility < ?",
+                (int(max_age_hours), max_utility)).fetchall()
+            for row in rows:
+                conn.execute("UPDATE memories SET status = 'archived' WHERE id = ?", (row[0],))
+            conn.execute("RELEASE sp_act")
+            # Mirror in recovery realm: stale failed actions too
+            n = len(rows)
+            if n:
+                logger.info("Auto-archived %d stale provisional actions (> %dh, utility<%.2f)", n, max_age_hours, max_utility)
+            return n
+        except Exception:
+            conn.execute("ROLLBACK TO sp_act")
+            raise
+
+    def run_sleep_cycle(self):
+        logger.info("Starting consolidation sleep cycle")
+        self.decay_importance()
+        self.merge_episodic_to_semantic()
+        self.archive_old_provisional()
+        self.archive_stale_actions()
 
     def stats(self) -> dict:
         conn = self.db._connect()
